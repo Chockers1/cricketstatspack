@@ -20,7 +20,7 @@ def require_login(request: Request):
 
 # Home page
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
+async def read_home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 # Login page
