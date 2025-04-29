@@ -6,9 +6,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Debug: confirm environment variables loaded correctly
-print("DB user:", os.getenv("DB_USER"))
-print("DB pass:", os.getenv("DB_PASS"))
-print("DB name:", os.getenv("DB_NAME"))
+# print("DB user:", os.getenv("DB_USER"))
+# print("DB pass:", os.getenv("DB_PASS"))
+# print("DB name:", os.getenv("DB_NAME"))
 
 def verify_user(username: str, password: str) -> bool:
     try:
@@ -37,3 +37,45 @@ def verify_user(username: str, password: str) -> bool:
     except Exception as e:
         print("Login error:", e)
         return False
+
+def create_user(username: str, password: str) -> bool:
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor()
+
+        # Check if username already exists
+        cursor.execute("SELECT username FROM users WHERE username = %s", (username,))
+        if cursor.fetchone():
+            print(f"Username '{username}' already exists.")
+            return False
+
+        # Hash the password
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+
+        # Insert the new user
+        cursor.execute(
+            "INSERT INTO users (username, password_hash) VALUES (%s, %s)",
+            (username, hashed_password.decode('utf-8')) # Store hash as string
+        )
+        conn.commit()
+        print(f"User '{username}' created successfully.")
+        return True
+
+    except mysql.connector.Error as err:
+        print(f"Database error during user creation: {err}")
+        return False
+    except Exception as e:
+        print(f"An unexpected error occurred during user creation: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
