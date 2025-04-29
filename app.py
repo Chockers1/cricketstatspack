@@ -20,7 +20,12 @@ def require_login(request: Request):
 
 # Home page
 @app.get("/", response_class=HTMLResponse)
-async def read_home(request: Request):
+def root(request: Request):
+    # If there's a user_id in session, redirect to dashboard
+    # Note: This requires session middleware to be configured
+    if request.session.get("user_id"):
+        return RedirectResponse("/dashboard")
+    # Otherwise render the public index
     return templates.TemplateResponse("index.html", {"request": request})
 
 # Login page
