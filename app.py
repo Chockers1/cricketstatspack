@@ -1,31 +1,37 @@
-from fastapi import FastAPI, Request, Form, Depends, HTTPException # Add Depends and HTTPException
+import os
+from dotenv import load_dotenv
+from fastapi import FastAPI, Request, Form, Depends, HTTPException # Keep Depends/HTTPException for now, might be needed elsewhere
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
-from auth_utils import verify_user, create_user # Import create_user
+from auth_utils import verify_user, create_user
 
 print("🔥 FASTAPI LOADED 🔥")
 
+load_dotenv()  # loads .env into os.environ
 
+SECRET_KEY = os.getenv("SECRET_KEY", "replace-this-with-a-real-secret")
 app = FastAPI()
 
+# Add Session Middleware:
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
+
+# your existing mounts & templates
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Copilot: add require_login dependency
+# Copilot: add require_login dependency (Keep for potential future use, but remove from /dashboard)
 def require_login(request: Request):
-  if request.cookies.get("logged_in") != "yes":
+  # This function now might check request.session instead if needed elsewhere
+  if not request.session.get("user_id"): # Example: Update to check session if used
       raise HTTPException(status_code=401, detail="Not authenticated")
 
-# Home page
+# Home page (Updated as requested)
 @app.get("/", response_class=HTMLResponse)
-def root(request: Request):
-    # If there's a user_id in session, redirect to dashboard
-    # Note: This requires session middleware to be configured
-    if request.session.get("user_id"):
-        return RedirectResponse("/dashboard")
-    # Otherwise render the public index
+async def root(request: Request):
+    # Simply render the public index
     return templates.TemplateResponse("index.html", {"request": request})
 
 # Login page
@@ -33,14 +39,18 @@ def root(request: Request):
 async def login_form(request: Request):
     return templates.TemplateResponse("login.html", {"request": request, "error": None})
 
-# ✅ Single, correct POST route for login
+# ✅ Single, correct POST route for login (Updated for session)
 @app.post("/login")
 async def login_submit(request: Request, username: str = Form(...), password: str = Form(...)):
     print("🚨 Login POST received")
+    # Assuming verify_user returns True on success, or maybe user info
+    # For now, let's assume it returns True and we store username in session
     if verify_user(username, password):
         print("✅ Login success — redirecting to dashboard")
+        # Store user identifier in session
+        request.session["user_id"] = username # Store username as user_id
         response = RedirectResponse(url="/dashboard", status_code=302)
-        response.set_cookie(key="logged_in", value="yes", httponly=True)
+        # response.set_cookie(key="logged_in", value="yes", httponly=True) # Remove cookie setting
         return response
     else:
         print("❌ Login failed — invalid username/password")
@@ -61,15 +71,23 @@ async def register_submit(request: Request, username: str = Form(...), password:
         print(f"❌ Registration failed for user '{username}' — username might already exist")
         return templates.TemplateResponse("register.html", {"request": request, "error": "Username already exists or invalid input"})
 
-# Dummy dashboard route
-@app.get("/dashboard", dependencies=[Depends(require_login)], response_class=HTMLResponse)
+# Dummy dashboard route (Updated as requested)
+# @app.get("/dashboard", dependencies=[Depends(require_login)], response_class=HTMLResponse) # Remove dependency
+@app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
+    # Check session for user_id
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login") # Redirect if not logged in
+    # If logged in, render dashboard
+    # Pass user_id to template if needed, e.g., {"request": request, "user": request.session.get("user_id")}
     return templates.TemplateResponse("dashboard.html", {"request": request})
 
-# Copilot: add logout endpoint
+# Copilot: add logout endpoint (Updated for session)
 @app.get("/logout")
 async def logout(request: Request):
+    # Clear the session
+    request.session.clear()
     response = RedirectResponse(url="/", status_code=302)
-    response.delete_cookie(key="logged_in")
+    # response.delete_cookie(key="logged_in") # Remove cookie deletion
     print("✅ Logout successful — redirecting to home")
     return response
