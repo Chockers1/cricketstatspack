@@ -12,11 +12,20 @@ print("🔥 FASTAPI LOADED 🔥")
 
 load_dotenv()  # loads .env into os.environ
 
-SECRET_KEY = os.getenv("SECRET_KEY", "replace-this-with-a-real-secret")
+# SECRET_KEY = os.getenv("SECRET_KEY", "replace-this-with-a-real-secret") # Remove this line
 app = FastAPI()
 
 # Add Session Middleware:
+# app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY) # Remove this line
+
+# load your SECRET_KEY from the env
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("You must set SECRET_KEY in your .env before starting")
+
+# install the middleware
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
+
 
 # your existing mounts & templates
 templates = Jinja2Templates(directory="templates")
