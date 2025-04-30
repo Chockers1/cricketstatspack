@@ -62,15 +62,16 @@ def create_user(username: str, email: str, password: str) -> bool:
             print(f"Email '{email}' already exists.")
             return False
 
-        # Hash the password
-        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        # Hash the password using the requested method
+        hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
-        # Insert the new user with email and default is_premium
-        # Ensure column names (username, email, password_hash, is_premium) match your DB schema
-        query = "INSERT INTO users (username, email, password_hash, is_premium) VALUES (%s, %s, %s, %s)"
+        # Insert the new user using the requested query and parameters
+        # Note: This assumes your password column is named 'password', not 'password_hash'
+        # and that you no longer want to set 'is_premium' by default.
+        query = "INSERT INTO users (username, password, email) VALUES (%s, %s, %s)"
         cursor.execute(
             query,
-            (username, email, hashed_password.decode('utf-8'), 0) # Add email and default is_premium=0
+            (username, hashed_password, email)
         )
         conn.commit()
         print(f"User '{username}' created successfully.")
