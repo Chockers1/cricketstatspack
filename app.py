@@ -5,10 +5,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-import mysql.connector # Added for direct DB access in login
-import bcrypt # Added for password checking in login
 
-from auth_utils import verify_user, create_user # Keep verify_user for now, though login route overrides it
+from auth_utils import verify_user, create_user
 from stripe_payments import router as stripe_payments_router # Add this import
 from stripe_webhook import router as stripe_webhook_router # Add this import
 
@@ -55,55 +53,57 @@ async def root(request: Request):
 async def login_form(request: Request):
     return templates.TemplateResponse("login.html", {"request": request, "error": None})
 
-# Updated POST route for login to store is_premium in session
+# ✅ Single, correct POST route for login (Updated for session)
 @app.post("/login")
 async def login_submit(request: Request, username: str = Form(...), password: str = Form(...)):
     print("🚨 Login POST received")
-    conn = None # Initialize DB variables
-    cursor = None
+    # Assuming verify_user returns True on success, or maybe user info
+    # For now, let's assume it returns True and we store username in session
+    # The parameters 'username' and 'password' match the HTML form names.
+    # The 'password' variable is passed directly to verify_user without modification here.
+    if verify_user(username, password):
+        print("✅ Login success — redirecting to dashboard")
+        # Store user identifier in session
+        request.session["user_id"] = username # Store username as user_id
+        response = RedirectResponse(url="/dashboard", status_code=302)
+        # response.set_cookie(key="logged_in", value="yes", httponly=True) # Remove cookie setting
+        return response
+    else:
+        print("❌ Login failed — invalid username/password")
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid login"})
 
-    try:
-        # DB connection
-        conn = mysql.connector.connect(
-            host=os.getenv("DB_HOST"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASS"),
-            database=os.getenv("DB_NAME")
-        )
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
-        user = cursor.fetchone()
+# Registration page
+@app.get("/register", response_class=HTMLResponse)
+async def register_form(request: Request):
+    return templates.TemplateResponse("register.html", {"request": request, "error": None})
 
-        print("🔎 User from DB:", user) # Debug output
+# Registration submission
+@app.post("/register")
+async def register_submit(request: Request, username: str = Form(...), email: str = Form(...), password: str = Form(...)):
+    # ✅ Fix: Correct parameter order for create_user()
+    if create_user(username, email, password): # Corrected argument order
+        print(f"✅ User '{username}' created successfully — redirecting to login")
+        return RedirectResponse(url="/login", status_code=302)
+    else:
+        print(f"❌ Registration failed for user '{username}' — username might already exist")
+        return templates.TemplateResponse("register.html", {"request": request, "error": "Username already exists or invalid input"})
 
-        # Verify password and user existence
-        # Ensure 'password_hash' matches your actual DB column name
-        if user and bcrypt.checkpw(password.encode('utf-8'), user['password_hash'].encode('utf-8')):
-            print("✅ Login success — redirecting to dashboard")
-            # Store user_id and is_premium status in session
-            request.session["user_id"] = username
-            # Convert DB value (likely 0 or 1) to boolean for the session
-            request.session["is_premium"] = bool(user.get("is_premium", 0)) # <-- THIS LINE IS KEY
-            response = RedirectResponse(url="/dashboard", status_code=302)
-            return response
-        else:
-            # Invalid credentials
-            print("❌ Login failed — invalid username/password")
-            return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid login"})
+# Add the new subscribe route here
+@app.get("/subscribe", response_class=HTMLResponse)
+async def subscribe_page(request: Request):
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login")
+    return templates.TemplateResponse("subscribe.html", {"request": request})
 
-    except mysql.connector.Error as db_err:
-        print(f"🔥 Login DB error: {db_err}")
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Database error during login"})
-    except Exception as e:
-        print(f"🔥 Login error: {e}") # General error logging
-        # Generic error message for the user
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Something went wrong during login"})
-    finally:
-        # Ensure cursor and connection are closed
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
-           
+
+# Updated dashboard route to check premium status and redirect if not premium
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login")
+
+    username = request.session["user_id"] # Use username directly from session
+
     # Check DB to get premium status
     import mysql.connector # Import locally as requested
     conn = None
