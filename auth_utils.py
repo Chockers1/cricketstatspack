@@ -50,38 +50,35 @@ def create_user(username: str, email: str, password: str) -> bool:
         )
         cursor = conn.cursor()
 
-        # Check if username already exists
-        cursor.execute("SELECT username FROM users WHERE username = %s", (username,))
-        if cursor.fetchone():
-            print(f"Username '{username}' already exists.")
-            return False
+        # Check if username or email already exists
+        cursor.execute("SELECT username, email FROM users WHERE username = %s OR email = %s", (username, email))
+        existing_user = cursor.fetchone()
+        if existing_user:
+            if existing_user[0] == username:
+                print(f"Username '{username}' already exists.")
+            if existing_user[1] == email:
+                 print(f"Email '{email}' already exists.")
+            return False  # Already exists
 
-        # Check if email already exists
-        cursor.execute("SELECT email FROM users WHERE email = %s", (email,))
-        if cursor.fetchone():
-            print(f"Email '{email}' already exists.")
-            return False
+        # Hash the password
+        hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
-        # Hash the password using the requested method
-        hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-
-        # Insert the new user using the requested query and parameters
-        # Note: This assumes your password column is named 'password', not 'password_hash'
-        # and that you no longer want to set 'is_premium' by default.
-        query = "INSERT INTO users (username, password, email) VALUES (%s, %s, %s)"
+        # Insert new user
+        # Note: Using 'password_hash' column name based on verify_user. The prompt used 'password'. Adjust if needed.
+        query = "INSERT INTO users (username, password_hash, email, is_premium) VALUES (%s, %s, %s, %s)"
         cursor.execute(
             query,
-            (username, hashed_password, email)
+            (username, hashed_pw, email, 0) # Set is_premium to 0
         )
         conn.commit()
         print(f"User '{username}' created successfully.")
         return True
 
     except mysql.connector.Error as err:
-        print(f"Database error during user creation: {err}")
+        print(f"⚠️ Error in create_user: {err}") # Updated error message
         return False
     except Exception as e:
-        print(f"An unexpected error occurred during user creation: {e}")
+        print(f"⚠️ Error in create_user: {e}") # Updated error message
         return False
     finally:
         if cursor:
