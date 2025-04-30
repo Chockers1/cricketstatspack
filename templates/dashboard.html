@@ -11,7 +11,8 @@
     {# This assumes 'is_premium' is stored in the session #}
     {% if request.session.get('is_premium') %}
         <p>🎉 You are a premium subscriber!</p>
-        <a href="/manage-subscription">Manage Subscription</a>
+        <a href="/manage-subscription">Manage Subscription</a> |
+        <a href="/logout">Logout</a> {# Added logout link here #}
     {% else %}
         <p>🔒 You need a premium subscription to access this content.</p>
         <a href="/subscribe">Subscribe Now</a> |
