@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from auth_utils import verify_user, create_user
+from stripe_payments import router as stripe_payments_router # Add this import
 
 print("🔥 FASTAPI LOADED 🔥")
 
@@ -26,6 +27,8 @@ if not SECRET_KEY:
 # install the middleware
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
+# Include the Stripe payments router
+app.include_router(stripe_payments_router) # Add this line
 
 # your existing mounts & templates
 templates = Jinja2Templates(directory="templates")
