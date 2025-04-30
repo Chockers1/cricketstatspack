@@ -6,13 +6,14 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-import secrets
-import datetime
+# import secrets # Keep secrets if needed elsewhere, otherwise uuid is used now
+from uuid import uuid4 # Import uuid4
+from datetime import datetime, timedelta # Import timedelta
 import mysql.connector
 import bcrypt # Add bcrypt import
 
-# Assuming email_utils.py exists with send_password_reset_email function
-from email_utils import send_password_reset_email
+# Assuming email_utils.py exists with send_reset_email function (updated name)
+from email_utils import send_reset_email # Use send_reset_email as per prompt
 from auth_utils import verify_user, create_user
 from stripe_payments import router as stripe_payments_router # Add this import
 from stripe_webhook import router as stripe_webhook_router # Add this import
@@ -174,57 +175,60 @@ async def forgot_password_form(request: Request):
     # Ensure forgot_password.html exists in the templates directory
     return templates.TemplateResponse("forgot_password.html", {"request": request, "message": None})
 
+# Replace the existing POST route implementation
 @app.post("/forgot-password")
-async def forgot_password_submit(request: Request, email: str = Form(...)):
+async def forgot_password_submit(request: Request, email: str = Form(...)): # Renamed from forgot_password_post for consistency
     conn = None
     cursor = None
     try:
-        conn = mysql.connector.connect(
-            host=os.getenv("DB_HOST"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASS"),
-            database=os.getenv("DB_NAME")
+        # Check if email exists in users table before generating token (optional but good practice)
+        conn_check = mysql.connector.connect(
+            host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
         )
-        # Use dictionary cursor for potentially easier access later if needed
-        cursor = conn.cursor(dictionary=True)
+        cursor_check = conn_check.cursor()
+        cursor_check.execute("SELECT email FROM users WHERE email = %s", (email,))
+        user_exists = cursor_check.fetchone()
+        cursor_check.close()
+        conn_check.close()
 
-        # Check email exists
-        cursor.execute("SELECT username FROM users WHERE email = %s", (email,))
-        user = cursor.fetchone()
-        if not user:
-            print(f"Password reset requested for non-existent email: {email}")
-            return templates.TemplateResponse("forgot_password.html", {"request": request, "message": "❌ Email not found"})
+        # Only proceed if the user exists to avoid leaking information
+        if user_exists:
+            token = str(uuid4()) # Use uuid4 for token generation
+            expires_at = datetime.utcnow() + timedelta(hours=1)
 
-        # Generate token and expiry
-        token = secrets.token_urlsafe(32)
-        # Ensure expiry is timezone-aware if your DB requires it, otherwise UTC is fine
-        expiry = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+            conn = mysql.connector.connect(
+                host=os.getenv("DB_HOST"),
+                user=os.getenv("DB_USER"),
+                password=os.getenv("DB_PASS"),
+                database=os.getenv("DB_NAME")
+            )
+            cursor = conn.cursor()
+            # Ensure password_resets table exists with columns: email, token, expires_at
+            cursor.execute("INSERT INTO password_resets (email, token, expires_at) VALUES (%s, %s, %s)", (email, token, expires_at))
+            conn.commit()
 
-        # Insert token into password_resets table (ensure this table exists)
-        # Columns assumed: email (VARCHAR), token (VARCHAR), expires_at (DATETIME/TIMESTAMP)
-        insert_query = "INSERT INTO password_resets (email, token, expires_at) VALUES (%s, %s, %s)"
-        cursor.execute(insert_query, (email, token, expiry))
-        conn.commit()
+            # Send email using the imported function
+            base_url = os.getenv("BASE_URL", "https://cricketstatspack.com")
+            reset_link = f"{base_url}/reset-password?token={token}"
+            send_reset_email(email, reset_link) # Use send_reset_email
+            print(f"Password reset email initiated for {email} (if user exists).")
+        else:
+             print(f"Password reset requested for non-existent email: {email}. No email sent.")
 
-        # Send email with the reset link
-        # Ensure your base URL is correct (e.g., read from env var)
-        base_url = os.getenv("BASE_URL", "https://cricketstatspack.com")
-        reset_link = f"{base_url}/reset-password?token={token}"
-        print(f"Generated reset link for {email}: {reset_link}") # Log the link for debugging
 
-        # Call the email sending function
-        send_password_reset_email(email, reset_link)
-        print(f"Password reset email initiated for {email}")
-
-        return templates.TemplateResponse("forgot_password.html", {"request": request, "message": "✅ If an account exists for this email, a password reset link has been sent."}) # More secure message
+        # Always return the success message regardless of whether the email existed
+        # This prevents attackers from confirming which emails are registered.
+        return templates.TemplateResponse("forgot_password.html", {
+            "request": request,
+            "message": "✅ If an account exists for this email, a password reset link has been sent." # Use 'message' key consistent with GET route
+        })
 
     except mysql.connector.Error as err:
         print(f"Database error during password reset for {email}: {err}")
-        # Show a generic error to the user
         return templates.TemplateResponse("forgot_password.html", {"request": request, "message": "⚠️ An error occurred. Please try again later."})
     except Exception as e:
         print(f"Unexpected error during password reset for {email}: {e}")
-        # Consider logging the full exception details
         return templates.TemplateResponse("forgot_password.html", {"request": request, "message": "⚠️ An unexpected error occurred. Please try again later."})
     finally:
         if cursor:
