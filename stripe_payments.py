@@ -3,6 +3,7 @@ import stripe
 import os
 from fastapi import APIRouter, Request, Query, HTTPException
 from fastapi.responses import RedirectResponse
+import mysql.connector # Add this import
 
 router = APIRouter()
 
@@ -14,12 +15,37 @@ async def create_checkout_session(
     request: Request, # Keep request parameter
     plan: str = Query(...)
 ):
+    conn = None # Initialize DB connection variables
+    cursor = None
     try:
-        # Keep user email retrieval from session
-        user_email = request.session.get("user_id")
-        if not user_email:
-            raise HTTPException(status_code=401, detail="User not logged in")
+        # Get username from session
+        username = request.session.get("user_id")
+        if not username:
+            raise HTTPException(status_code=401, detail="Not logged in") # Changed error message
 
+        # Fetch user email from database
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            database=os.getenv("DB_NAME")
+        )
+        # Use dictionary=True for easier access, though index 0 works too
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT email FROM users WHERE username = %s", (username,))
+        result = cursor.fetchone()
+
+        if not result:
+            # Raise 404 if user not found in DB
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user_email = result.get("email") # Use .get for safety with dictionary cursor
+        # Basic email format check
+        if not user_email or "@" not in user_email:
+            print(f"Invalid email format found for user {username}: {user_email}")
+            raise HTTPException(status_code=400, detail="Invalid email format associated with user")
+
+        # Determine Stripe Price ID
         if plan == "monthly":
             price_id = os.getenv("STRIPE_PRICE_ID_MONTHLY")
         elif plan == "annual":
@@ -27,24 +53,50 @@ async def create_checkout_session(
         else:
             raise HTTPException(status_code=400, detail="Invalid plan")
 
-        print(f"🔁 Using Stripe Price ID: {price_id}") # Add print statement
+        # Check if price_id was actually found
+        if not price_id:
+             print(f"Stripe Price ID not found for plan: {plan}")
+             raise HTTPException(status_code=500, detail=f"Configuration error: Price ID for plan '{plan}' not set.")
 
+        print(f"🔁 Creating Stripe checkout session for {user_email} with plan {plan} using Price ID: {price_id}") # Updated log
+
+        # Create Stripe Checkout Session using the fetched email
         session = stripe.checkout.Session.create(
-            customer_email=user_email, # Keep using customer_email
             payment_method_types=["card"],
             mode="subscription",
+            customer_email=user_email, # Use the email fetched from DB
             line_items=[{"price": price_id, "quantity": 1}],
-            success_url="https://cricketstatspack.com/success",
+            success_url="https://cricketstatspack.com/success", # Ensure these URLs are correct
             cancel_url="https://cricketstatspack.com/cancel",
         )
 
-        print(f"✅ Stripe session created: {session.url}") # Add print statement
+        print(f"✅ Stripe session created: {session.url}")
         return {"url": session.url}
 
+    # Specific exception for Stripe errors
+    except stripe.error.StripeError as e:
+        print(f"❌ Stripe API error: {str(e)}")
+        # Consider logging the full error e.json_body maybe
+        return {"error": f"Could not initiate checkout. Stripe error: {str(e)}"}
+    # Specific exception for DB errors
+    except mysql.connector.Error as err:
+        print(f"❌ Database error: {err}")
+        return {"error": "Could not retrieve user information. Please try again later."}
+    # General exception for other issues (like HTTPException from checks)
+    except HTTPException as http_exc:
+        # Re-raise HTTPException to let FastAPI handle it
+        raise http_exc
     except Exception as e:
-        print(f"❌ Stripe session error: {str(e)}") # Add detailed print
-        # Return the specific error message in the response
-        return {"error": f"Stripe session error: {str(e)}"}
+        print(f"❌ Unexpected error: {str(e)}") # Catch-all for other errors
+        # Provide a more generic error message to the client
+        return {"error": f"An unexpected error occurred: {str(e)}"}
+    finally:
+        # Ensure DB connection is closed
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
 
 @router.get("/manage-subscription")
 async def manage_subscription(request: Request):
