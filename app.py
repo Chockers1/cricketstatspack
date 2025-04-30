@@ -96,19 +96,19 @@ async def subscribe_page(request: Request):
     return templates.TemplateResponse("subscribe.html", {"request": request})
 
 
-# Updated dashboard route to check premium status
+# Updated dashboard route to check premium status and redirect if not premium
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
     if not request.session.get("user_id"):
         return RedirectResponse("/login")
 
-    username = request.session.get("user_id")
+    username = request.session["user_id"] # Use username directly from session
 
-    # Connect to DB and check if user is premium
+    # Check DB to get premium status
     import mysql.connector # Import locally as requested
-    conn = None # Initialize conn to None for finally block
-    cursor = None # Initialize cursor to None for finally block
-    is_premium = False # Default to False
+    conn = None
+    cursor = None
+    user = None # Initialize user
 
     try:
         conn = mysql.connector.connect(
@@ -121,28 +121,49 @@ async def dashboard(request: Request):
         cursor.execute("SELECT is_premium FROM users WHERE username = %s", (username,))
         user = cursor.fetchone()
 
-        if user:
-            # Check if is_premium is 1 (or True if stored as boolean)
-            is_premium = user.get("is_premium") == 1 # Use .get for safety
-
     except mysql.connector.Error as err:
-        print(f"Database error fetching premium status: {err}")
-        # Decide how to handle DB errors, maybe redirect or show error page
-        # For now, we'll proceed with is_premium = False
+        print(f"Database error fetching premium status for {username}: {err}")
+        # Handle DB error, perhaps redirect to an error page or show a generic message
+        # For now, treat as non-premium / error
+        return templates.TemplateResponse("subscribe_prompt.html", { # Or an error template
+            "request": request,
+            "message": "⚠️ Could not verify subscription status. Please try again later.",
+            "cta": "Return Home", # Adjust CTA as needed
+            "cta_link": "/" # Link for the CTA button
+        })
     except Exception as e:
-        print(f"An unexpected error occurred fetching premium status: {e}")
-        # Handle other potential errors
+        print(f"An unexpected error occurred fetching premium status for {username}: {e}")
+        # Handle other errors similarly
+        return templates.TemplateResponse("subscribe_prompt.html", { # Or an error template
+            "request": request,
+            "message": "⚠️ An unexpected error occurred. Please try again later.",
+            "cta": "Return Home",
+            "cta_link": "/"
+        })
     finally:
         if cursor:
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
 
+    # Check if user exists and is_premium is 1
+    if not user or user.get("is_premium") != 1:
+        # User is not premium — render subscription prompt template
+        # Ensure subscribe_prompt.html exists and handles these variables
+        return templates.TemplateResponse("subscribe_prompt.html", {
+            "request": request,
+            "message": "🔒 You need a premium subscription to access the dashboard.",
+            "cta": "Subscribe Now",
+            "cta_link": "/subscribe" # Link for the CTA button
+        })
+
+    # Premium user — show full dashboard
+    # Pass necessary context for dashboard.html
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
-        "is_premium": is_premium,
-        "username": username
-    })
+        "is_premium": True, # User is confirmed premium here
+        "user": username    # Pass username as 'user'
+        })
 
 # Copilot: add logout endpoint (Updated for session)
 @app.get("/logout")

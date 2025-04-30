@@ -4,18 +4,23 @@
 <body>
     <h1>Welcome to the Cricket Stats Pack Dashboard</h1>
 
-    <h2>Welcome, {{ username }}!</h2>
+    <p><a href="/manage-subscription"><button>Manage Your Subscription</button></a></p> {# Added this line #}
+
+    <h2>Welcome, {{ user }}</h2> {# Changed from username to user #}
 
     {% if is_premium %}
-        <p style="color: green;">✅ You have premium access.</p>
+        <p>🎉 You are a premium subscriber!</p> {# Updated text #}
+        <a href="/manage-subscription"><button>Manage Subscription</button></a> {# Existing button inside if block #}
     {% else %}
-        <p style="color: red;">⚠️ You are on the free plan.</p>
+        <p>🔒 You are on the free plan.</p> {# Updated text #}
         <a href="/subscribe"><button>Upgrade to Premium</button></a>
     {% endif %}
 
-    <!-- <p>You are logged in.</p> --> <!-- This might be redundant now -->
+    <!-- Remove the old separate form -->
+    <!--
     <form action="/manage-subscription" method="get">
         <button type="submit">Manage Subscription</button>
     </form>
+    -->
 </body>
 </html>
