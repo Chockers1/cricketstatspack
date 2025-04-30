@@ -56,7 +56,7 @@ def create_user(username: str, email: str, password: str) -> bool:
             print(f"Username '{username}' already exists.")
             return False
 
-        # Check if email already exists (optional but recommended)
+        # Check if email already exists
         cursor.execute("SELECT email FROM users WHERE email = %s", (email,))
         if cursor.fetchone():
             print(f"Email '{email}' already exists.")
@@ -65,10 +65,12 @@ def create_user(username: str, email: str, password: str) -> bool:
         # Hash the password
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
 
-        # Insert the new user
+        # Insert the new user with email and default is_premium
+        # Ensure column names (username, email, password_hash, is_premium) match your DB schema
+        query = "INSERT INTO users (username, email, password_hash, is_premium) VALUES (%s, %s, %s, %s)"
         cursor.execute(
-            "INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s)",
-            (username, email, hashed_password.decode('utf-8')) # Store hash as string
+            query,
+            (username, email, hashed_password.decode('utf-8'), 0) # Add email and default is_premium=0
         )
         conn.commit()
         print(f"User '{username}' created successfully.")

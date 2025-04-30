@@ -78,7 +78,8 @@ async def register_form(request: Request):
 # Registration submission
 @app.post("/register")
 async def register_submit(request: Request, username: str = Form(...), email: str = Form(...), password: str = Form(...)):
-    if create_user(username, email, password):
+    # Update the order of arguments passed to create_user
+    if create_user(username, password, email):
         print(f"✅ User '{username}' created successfully — redirecting to login")
         return RedirectResponse(url="/login", status_code=302)
     else:
