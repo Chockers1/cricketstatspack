@@ -108,3 +108,7 @@ async def logout(request: Request):
     # response.delete_cookie(key="logged_in") # Remove cookie deletion
     print("✅ Logout successful — redirecting to home")
     return response
+
+@app.get("/success", response_class=HTMLResponse)
+async def success_page(request: Request):
+    return templates.TemplateResponse("success.html", {"request": request})
