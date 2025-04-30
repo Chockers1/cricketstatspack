@@ -8,6 +8,7 @@ router = APIRouter()
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
+# This route correctly uses @router.post
 @router.post("/create-checkout-session")
 async def create_checkout_session(
     request: Request,
