@@ -8,6 +8,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from auth_utils import verify_user, create_user
 from stripe_payments import router as stripe_payments_router # Add this import
+from stripe_webhook import router as stripe_webhook_router # Add this import
 
 print("🔥 FASTAPI LOADED 🔥")
 
@@ -29,6 +30,7 @@ app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
 # Include the Stripe payments router
 app.include_router(stripe_payments_router) # Add this line
+app.include_router(stripe_webhook_router) # Add this line
 
 # your existing mounts & templates
 templates = Jinja2Templates(directory="templates")
@@ -115,3 +117,4 @@ async def logout(request: Request):
 @app.get("/success", response_class=HTMLResponse)
 async def success_page(request: Request):
     return templates.TemplateResponse("success.html", {"request": request})
+
