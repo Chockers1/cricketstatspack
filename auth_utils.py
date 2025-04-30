@@ -22,20 +22,28 @@ def verify_user(username: str, password: str) -> bool:
         cursor = conn.cursor(dictionary=True)
         cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
         user = cursor.fetchone()
-        print("🔎 User from DB:", user)  # Debug output
+        print("🔎 User from DB:", user)
 
         cursor.close()
         conn.close()
 
-        if user and bcrypt.checkpw(password.encode('utf-8'), user['password_hash'].encode('utf-8')):
+        if not user:
+            print("❌ No user found with that username")
+            return False
+
+        print(f"🔐 Entered password (raw): {password}")
+        print(f"🔐 Entered password (encoded): {password.encode('utf-8')}")
+        print(f"🔐 Stored hash: {user['password_hash']}")
+
+        if bcrypt.checkpw(password.encode('utf-8'), user['password_hash'].encode('utf-8')):
             print("✅ Password verified")
             return True
-
-        print("❌ Invalid credentials")  # Debug output
-        return False
+        else:
+            print("❌ bcrypt check failed")
+            return False
 
     except Exception as e:
-        print("Login error:", e)
+        print(f"🔥 Login error: {e}")
         return False
 
 def create_user(username: str, email: str, password: str) -> bool:
