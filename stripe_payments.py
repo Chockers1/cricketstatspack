@@ -9,8 +9,15 @@ router = APIRouter()
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
 @router.post("/create-checkout-session")
-async def create_checkout_session(plan: str = Query(...)):
+async def create_checkout_session(
+    request: Request,
+    plan: str = Query(...)
+):
     try:
+        user_email = request.session.get("user_id")
+        if not user_email:
+            raise HTTPException(status_code=401, detail="User not logged in")
+
         if plan == "monthly":
             price_id = os.getenv("STRIPE_PRICE_ID_MONTHLY")
         elif plan == "annual":
@@ -19,6 +26,7 @@ async def create_checkout_session(plan: str = Query(...)):
             raise HTTPException(status_code=400, detail="Invalid plan")
 
         session = stripe.checkout.Session.create(
+            customer_email=user_email,
             payment_method_types=["card"],
             mode="subscription",
             line_items=[{"price": price_id, "quantity": 1}],
@@ -26,6 +34,9 @@ async def create_checkout_session(plan: str = Query(...)):
             cancel_url="https://cricketstatspack.com/cancel",
         )
         return {"url": session.url}
+
+    except Exception as e:
+        return {"detail": f"An unexpected error occurred: {str(e)}"}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

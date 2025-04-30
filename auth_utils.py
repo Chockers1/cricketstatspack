@@ -38,7 +38,7 @@ def verify_user(username: str, password: str) -> bool:
         print("Login error:", e)
         return False
 
-def create_user(username: str, password: str) -> bool:
+def create_user(username: str, email: str, password: str) -> bool:
     conn = None
     cursor = None
     try:
@@ -56,13 +56,19 @@ def create_user(username: str, password: str) -> bool:
             print(f"Username '{username}' already exists.")
             return False
 
+        # Check if email already exists (optional but recommended)
+        cursor.execute("SELECT email FROM users WHERE email = %s", (email,))
+        if cursor.fetchone():
+            print(f"Email '{email}' already exists.")
+            return False
+
         # Hash the password
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
 
         # Insert the new user
         cursor.execute(
-            "INSERT INTO users (username, password_hash) VALUES (%s, %s)",
-            (username, hashed_password.decode('utf-8')) # Store hash as string
+            "INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s)",
+            (username, email, hashed_password.decode('utf-8')) # Store hash as string
         )
         conn.commit()
         print(f"User '{username}' created successfully.")
