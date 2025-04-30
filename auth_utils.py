@@ -31,19 +31,20 @@ def verify_user(username: str, password: str) -> bool:
             print("❌ No user found with that username")
             return False
 
+        stored_hash = user['password_hash']
         print(f"🔐 Entered password (raw): {password}")
-        print(f"🔐 Entered password (encoded): {password.encode('utf-8')}")
-        print(f"🔐 Stored hash: {user['password_hash']}")
+        print(f"🔐 Stored hash: {stored_hash}")
+        print("🔐 bcrypt.checkpw result:", bcrypt.checkpw(password.encode(), stored_hash.encode()))
 
-        if bcrypt.checkpw(password.encode('utf-8'), user['password_hash'].encode('utf-8')):
+        if bcrypt.checkpw(password.encode(), stored_hash.encode()):
             print("✅ Password verified")
             return True
-        else:
-            print("❌ bcrypt check failed")
-            return False
+
+        print("❌ bcrypt check failed")
+        return False
 
     except Exception as e:
-        print(f"🔥 Login error: {e}")
+        print("🔥 Login error:", e)
         return False
 
 def create_user(username: str, email: str, password: str) -> bool:
