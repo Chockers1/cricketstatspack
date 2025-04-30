@@ -59,6 +59,8 @@ async def login_submit(request: Request, username: str = Form(...), password: st
     print("🚨 Login POST received")
     # Assuming verify_user returns True on success, or maybe user info
     # For now, let's assume it returns True and we store username in session
+    # The parameters 'username' and 'password' match the HTML form names.
+    # The 'password' variable is passed directly to verify_user without modification here.
     if verify_user(username, password):
         print("✅ Login success — redirecting to dashboard")
         # Store user identifier in session
