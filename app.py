@@ -9,6 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import secrets
 import datetime
 import mysql.connector
+import bcrypt # Add bcrypt import
 
 # Assuming email_utils.py exists with send_password_reset_email function
 from email_utils import send_password_reset_email
@@ -232,4 +233,71 @@ async def forgot_password_submit(request: Request, email: str = Form(...)):
             conn.close()
 
 # --- End Forgot Password Routes ---
+
+# --- Add Reset Password Routes ---
+
+@app.get("/reset-password", response_class=HTMLResponse)
+async def reset_password_form(request: Request, token: str = Query(...)):
+    # Ensure reset_password.html exists in the templates directory
+    # Pass the token to the template so it can be included in the form submission
+    return templates.TemplateResponse("reset_password.html", {"request": request, "token": token, "error": None})
+
+@app.post("/reset-password")
+async def reset_password_submit(request: Request, token: str = Form(...), new_password: str = Form(...)):
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor(dictionary=True)
+
+        # Validate token and expiration
+        # Ensure expires_at column type matches datetime.datetime.utcnow() comparison
+        cursor.execute("SELECT email, expires_at FROM password_resets WHERE token = %s", (token,))
+        record = cursor.fetchone()
+
+        # Check if token exists and is not expired (using UTC comparison)
+        if not record or record['expires_at'] < datetime.datetime.utcnow():
+            print(f"Invalid or expired password reset token attempted: {token}")
+            return templates.TemplateResponse("reset_password.html", {"request": request, "token": token, "error": "❌ Invalid or expired token. Please request a new reset link."})
+
+        # Basic password validation (optional but recommended)
+        if len(new_password) < 8: # Example: Minimum length check
+             return templates.TemplateResponse("reset_password.html", {"request": request, "token": token, "error": "❌ Password must be at least 8 characters long."})
+
+        # Update password
+        # Ensure the password column name ('password_hash') matches your users table schema
+        hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        update_query = "UPDATE users SET password_hash = %s WHERE email = %s"
+        cursor.execute(update_query, (hashed_pw, record['email']))
+
+        # Cleanup token immediately after successful password update
+        delete_query = "DELETE FROM password_resets WHERE token = %s"
+        cursor.execute(delete_query, (token,))
+
+        conn.commit()
+        print(f"Password successfully reset for email: {record['email']}")
+
+        # Redirect to login page with a success message (optional, using query param or flash message)
+        # For simplicity, just redirecting to login
+        return RedirectResponse("/login?message=Password+reset+successfully", status_code=302)
+
+    except mysql.connector.Error as err:
+        print(f"Database error during password reset for token {token}: {err}")
+        # Show a generic error on the reset form
+        return templates.TemplateResponse("reset_password.html", {"request": request, "token": token, "error": "⚠️ A database error occurred. Please try again."})
+    except Exception as e:
+        print(f"Unexpected error during password reset for token {token}: {e}")
+        return templates.TemplateResponse("reset_password.html", {"request": request, "token": token, "error": "⚠️ An unexpected error occurred. Please try again."})
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+# --- End Reset Password Routes ---
 
