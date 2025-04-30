@@ -6,12 +6,13 @@
 
     <h2>Welcome, {{ user }}</h2> {# Changed from username to user #}
 
+    {# Replace the existing conditional block with the new one #}
     {% if is_premium %}
-        <p>🎉 You are a premium subscriber!</p> {# Updated text #}
-        <a href="/manage-subscription"><button>Manage Subscription</button></a> {# Keep this button inside the if block #}
+      <p>🎉 You are a premium subscriber!</p>
+      <a href="/manage-subscription"><button>Manage Subscription</button></a>
     {% else %}
-        <p>🔒 You are on the free plan.</p> {# Updated text #}
-        <a href="/subscribe"><button>Upgrade to Premium</button></a>
+      <p>🔒 You need a premium subscription to access the dashboard.</p>
+      <a href="/subscribe">Subscribe Now</a> {# Changed button to link #}
     {% endif %}
 
     <!-- Remove the old separate form -->
