@@ -72,6 +72,7 @@ def create_user(username: str, email: str, password: str) -> bool:
         )
         conn.commit()
         print(f"User '{username}' created successfully.")
+        print("✅ Hashed password stored:", hashed_pw) # Add this debug line
         return True
 
     except mysql.connector.Error as err:
