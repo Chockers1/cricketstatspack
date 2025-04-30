@@ -96,16 +96,53 @@ async def subscribe_page(request: Request):
     return templates.TemplateResponse("subscribe.html", {"request": request})
 
 
-# Dummy dashboard route (Updated as requested)
-# @app.get("/dashboard", dependencies=[Depends(require_login)], response_class=HTMLResponse) # Remove dependency
+# Updated dashboard route to check premium status
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    # Check session for user_id
     if not request.session.get("user_id"):
-        return RedirectResponse("/login") # Redirect if not logged in
-    # If logged in, render dashboard
-    # Pass user_id to template if needed, e.g., {"request": request, "user": request.session.get("user_id")}
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+        return RedirectResponse("/login")
+
+    username = request.session.get("user_id")
+
+    # Connect to DB and check if user is premium
+    import mysql.connector # Import locally as requested
+    conn = None # Initialize conn to None for finally block
+    cursor = None # Initialize cursor to None for finally block
+    is_premium = False # Default to False
+
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT is_premium FROM users WHERE username = %s", (username,))
+        user = cursor.fetchone()
+
+        if user:
+            # Check if is_premium is 1 (or True if stored as boolean)
+            is_premium = user.get("is_premium") == 1 # Use .get for safety
+
+    except mysql.connector.Error as err:
+        print(f"Database error fetching premium status: {err}")
+        # Decide how to handle DB errors, maybe redirect or show error page
+        # For now, we'll proceed with is_premium = False
+    except Exception as e:
+        print(f"An unexpected error occurred fetching premium status: {e}")
+        # Handle other potential errors
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "is_premium": is_premium,
+        "username": username
+    })
 
 # Copilot: add logout endpoint (Updated for session)
 @app.get("/logout")

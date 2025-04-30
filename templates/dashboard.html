@@ -3,7 +3,17 @@
 <head><title>Dashboard</title></head>
 <body>
     <h1>Welcome to the Cricket Stats Pack Dashboard</h1>
-    <p>You are logged in.</p>
+
+    <h2>Welcome, {{ username }}!</h2>
+
+    {% if is_premium %}
+        <p style="color: green;">✅ You have premium access.</p>
+    {% else %}
+        <p style="color: red;">⚠️ You are on the free plan.</p>
+        <a href="/subscribe"><button>Upgrade to Premium</button></a>
+    {% endif %}
+
+    <!-- <p>You are logged in.</p> --> <!-- This might be redundant now -->
     <form action="/manage-subscription" method="get">
         <button type="submit">Manage Subscription</button>
     </form>
