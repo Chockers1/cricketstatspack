@@ -4,13 +4,11 @@
 <body>
     <h1>Welcome to the Cricket Stats Pack Dashboard</h1>
 
-    <p><a href="/manage-subscription"><button>Manage Your Subscription</button></a></p> {# Added this line #}
-
     <h2>Welcome, {{ user }}</h2> {# Changed from username to user #}
 
     {% if is_premium %}
         <p>🎉 You are a premium subscriber!</p> {# Updated text #}
-        <a href="/manage-subscription"><button>Manage Subscription</button></a> {# Existing button inside if block #}
+        <a href="/manage-subscription"><button>Manage Subscription</button></a> {# Keep this button inside the if block #}
     {% else %}
         <p>🔒 You are on the free plan.</p> {# Updated text #}
         <a href="/subscribe"><button>Upgrade to Premium</button></a>
