@@ -15,7 +15,7 @@
 <script>
     document.getElementById('subscribe-monthly-button').addEventListener('click', function() {
         fetch('/create-checkout-session?plan=monthly', {
-            method: 'POST',
+            method: 'POST', // This is correctly set to POST
             headers: {
                 'Content-Type': 'application/json',
                 // Include CSRF token if your Django setup requires it for POST requests
