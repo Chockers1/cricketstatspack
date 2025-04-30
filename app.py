@@ -238,65 +238,86 @@ async def forgot_password_submit(request: Request, email: str = Form(...)): # Re
 
 # --- End Forgot Password Routes ---
 
-# --- Add Reset Password Routes ---
+# --- Replace Reset Password Routes ---
 
+# Replace existing GET /reset-password
 @app.get("/reset-password", response_class=HTMLResponse)
-async def reset_password_form(request: Request, token: str = Query(...)):
-    # Ensure reset_password.html exists in the templates directory
-    # Pass the token to the template so it can be included in the form submission
-    return templates.TemplateResponse("reset_password.html", {"request": request, "token": token, "error": None})
+async def reset_password_form(request: Request):
+    # This version doesn't expect a token in the query parameter anymore
+    # Ensure reset_password.html is updated to not require/use a token variable
+    return templates.TemplateResponse("reset_password.html", {"request": request, "error": None})
 
-@app.post("/reset-password")
-async def reset_password_submit(request: Request, token: str = Form(...), new_password: str = Form(...)):
+# Replace existing POST /reset-password
+@app.post("/reset-password", response_class=HTMLResponse) # Changed decorator to match function name
+async def reset_password_submit(request: Request, username: str = Form(...), new_password: str = Form(...), confirm_password: str = Form(...)):
+    # Check if passwords match
+    if new_password != confirm_password:
+        print(f"Password mismatch for user {username} during reset attempt.")
+        # Pass username back to template if needed, e.g., to pre-fill the form
+        return templates.TemplateResponse("reset_password.html", {
+            "request": request,
+            "error": "Passwords do not match.",
+            "username": username # Optional: pass username back
+        })
+
+    # Imports are already global, but kept here as per prompt structure
+    # import bcrypt, mysql.connector
     conn = None
     cursor = None
     try:
+        # Basic password validation (optional but recommended)
+        if len(new_password) < 8: # Example: Minimum length check
+             print(f"Password too short for user {username} during reset attempt.")
+             return templates.TemplateResponse("reset_password.html", {
+                 "request": request,
+                 "error": "❌ Password must be at least 8 characters long.",
+                 "username": username # Optional: pass username back
+             })
+
+        # Hash the new password
+        hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"),
             user=os.getenv("DB_USER"),
             password=os.getenv("DB_PASS"),
             database=os.getenv("DB_NAME")
         )
-        cursor = conn.cursor(dictionary=True)
-
-        # Validate token and expiration
-        # Ensure expires_at column type matches datetime.datetime.utcnow() comparison
-        cursor.execute("SELECT email, expires_at FROM password_resets WHERE token = %s", (token,))
-        record = cursor.fetchone()
-
-        # Check if token exists and is not expired (using UTC comparison)
-        if not record or record['expires_at'] < datetime.datetime.utcnow():
-            print(f"Invalid or expired password reset token attempted: {token}")
-            return templates.TemplateResponse("reset_password.html", {"request": request, "token": token, "error": "❌ Invalid or expired token. Please request a new reset link."})
-
-        # Basic password validation (optional but recommended)
-        if len(new_password) < 8: # Example: Minimum length check
-             return templates.TemplateResponse("reset_password.html", {"request": request, "token": token, "error": "❌ Password must be at least 8 characters long."})
-
-        # Update password
-        # Ensure the password column name ('password_hash') matches your users table schema
-        hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        update_query = "UPDATE users SET password_hash = %s WHERE email = %s"
-        cursor.execute(update_query, (hashed_pw, record['email']))
-
-        # Cleanup token immediately after successful password update
-        delete_query = "DELETE FROM password_resets WHERE token = %s"
-        cursor.execute(delete_query, (token,))
-
+        cursor = conn.cursor()
+        # Update password based on username
+        # Ensure password column is 'password_hash'
+        update_query = "UPDATE users SET password_hash = %s WHERE username = %s"
+        cursor.execute(update_query, (hashed_pw, username))
         conn.commit()
-        print(f"Password successfully reset for email: {record['email']}")
 
-        # Redirect to login page with a success message (optional, using query param or flash message)
-        # For simplicity, just redirecting to login
+        # Check if a row was actually updated (i.e., if the username existed)
+        if cursor.rowcount == 0:
+            print(f"Attempted password reset for non-existent username: {username}")
+            # Return error if username wasn't found
+            return templates.TemplateResponse("reset_password.html", {
+                "request": request,
+                "error": "Username not found.",
+                "username": username # Optional: pass username back
+            })
+
+        print(f"Password successfully reset for username: {username}")
+        # Redirect to login page after successful reset
         return RedirectResponse("/login?message=Password+reset+successfully", status_code=302)
 
     except mysql.connector.Error as err:
-        print(f"Database error during password reset for token {token}: {err}")
-        # Show a generic error on the reset form
-        return templates.TemplateResponse("reset_password.html", {"request": request, "token": token, "error": "⚠️ A database error occurred. Please try again."})
+        print(f"Database error during password reset for username {username}: {err}")
+        return templates.TemplateResponse("reset_password.html", {
+            "request": request,
+            "error": "⚠️ A database error occurred. Please try again.",
+            "username": username # Optional: pass username back
+        })
     except Exception as e:
-        print(f"Unexpected error during password reset for token {token}: {e}")
-        return templates.TemplateResponse("reset_password.html", {"request": request, "token": token, "error": "⚠️ An unexpected error occurred. Please try again."})
+        print(f"Unexpected error during password reset for username {username}: {e}")
+        return templates.TemplateResponse("reset_password.html", {
+            "request": request,
+            "error": "⚠️ An unexpected error occurred. Please try again.",
+            "username": username # Optional: pass username back
+        })
     finally:
         if cursor:
             cursor.close()
