@@ -1,0 +1,44 @@
+# .github/workflows/deploy.yml
+
+name: Deploy to VPS
+
+# run every time you push to main
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # 1) grab your code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2) load your private SSH key (you should have set CI_DEPLOY_KEY in Settings → Secrets)
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.8.1
+        with:
+          ssh-private-key: ${{ secrets.CI_DEPLOY_KEY }}
+
+      # 3) add your server to known_hosts (avoid “host key verification” prompts)
+      - name: Add server to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      # 4) actually SSH in and deploy
+      - name: Deploy to VPS
+        run: |
+          ssh root@${{ secrets.VPS_HOST }} << 'EOF'
+            cd ~/cricketapp
+            git pull origin main
+            source venv/bin/activate
+            pip install -r requirements.txt
+            # (if you ever change SECRET_KEY in GH, sync it here)
+            # echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" >> .env
+            sudo systemctl daemon-reload
+            sudo systemctl restart cricketapp
+            sudo nginx -t && sudo systemctl reload nginx
+          EOF
