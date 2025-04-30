@@ -1,0 +1,43 @@
+<!-- filepath: c:\Users\rtayl\OneDrive\Rob Documents\Python Scripts\cricketstatspack\templates\subscribe.html -->
+{% extends "base.html" %}
+
+{% block title %}Subscribe{% endblock %}
+
+{% block content %}
+<h2>Subscription Plans</h2>
+<p>Choose a plan to subscribe:</p>
+
+<!-- Example: Monthly Plan Button -->
+<button id="subscribe-monthly-button">Subscribe Monthly</button>
+
+<!-- Add more buttons for other plans if needed -->
+
+<script>
+    document.getElementById('subscribe-monthly-button').addEventListener('click', function() {
+        fetch('/create-checkout-session?plan=monthly', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                // Include CSRF token if your Django setup requires it for POST requests
+                // 'X-CSRFToken': '{{ csrf_token }}'
+            },
+            // body: JSON.stringify({}), // Add body if needed
+        })
+        .then(response => response.json())
+        .then(session => {
+            if (session.url) {
+                // Redirect the user to Stripe Checkout
+                window.location.href = session.url;
+            } else {
+                // Handle errors (e.g., display a message to the user)
+                console.error('Error creating checkout session:', session);
+                alert('Could not initiate checkout. Please try again.');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred. Please try again.');
+        });
+    });
+</script>
+{% endblock %}

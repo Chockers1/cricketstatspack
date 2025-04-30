@@ -83,6 +83,11 @@ async def register_submit(request: Request, username: str = Form(...), password:
         print(f"❌ Registration failed for user '{username}' — username might already exist")
         return templates.TemplateResponse("register.html", {"request": request, "error": "Username already exists or invalid input"})
 
+# Add the new subscribe route here
+@app.get("/subscribe", response_class=HTMLResponse)
+async def subscribe_page(request: Request):
+    return templates.TemplateResponse("subscribe.html", {"request": request})
+
 # Dummy dashboard route (Updated as requested)
 # @app.get("/dashboard", dependencies=[Depends(require_login)], response_class=HTMLResponse) # Remove dependency
 @app.get("/dashboard", response_class=HTMLResponse)
