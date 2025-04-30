@@ -11,10 +11,11 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 # This route correctly uses @router.post
 @router.post("/create-checkout-session")
 async def create_checkout_session(
-    request: Request,
+    request: Request, # Keep request parameter
     plan: str = Query(...)
 ):
     try:
+        # Keep user email retrieval from session
         user_email = request.session.get("user_id")
         if not user_email:
             raise HTTPException(status_code=401, detail="User not logged in")
@@ -26,21 +27,24 @@ async def create_checkout_session(
         else:
             raise HTTPException(status_code=400, detail="Invalid plan")
 
+        print(f"🔁 Using Stripe Price ID: {price_id}") # Add print statement
+
         session = stripe.checkout.Session.create(
-            customer_email=user_email,
+            customer_email=user_email, # Keep using customer_email
             payment_method_types=["card"],
             mode="subscription",
             line_items=[{"price": price_id, "quantity": 1}],
             success_url="https://cricketstatspack.com/success",
             cancel_url="https://cricketstatspack.com/cancel",
         )
+
+        print(f"✅ Stripe session created: {session.url}") # Add print statement
         return {"url": session.url}
 
     except Exception as e:
-        return {"detail": f"An unexpected error occurred: {str(e)}"}
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ Stripe session error: {str(e)}") # Add detailed print
+        # Return the specific error message in the response
+        return {"error": f"Stripe session error: {str(e)}"}
 
 @router.get("/manage-subscription")
 async def manage_subscription(request: Request):
