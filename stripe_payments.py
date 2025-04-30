@@ -7,7 +7,7 @@ router = APIRouter()
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
-@router.get("/create-checkout-session")
+@router.post("/create-checkout-session")
 async def create_checkout_session(plan: str = Query(...)):
     try:
         if plan == "monthly":
