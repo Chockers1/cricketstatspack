@@ -1,19 +1,17 @@
 import os
 from dotenv import load_dotenv
-# Add Query, secrets, datetime, mysql.connector to imports
-from fastapi import FastAPI, Request, Form, Depends, HTTPException, Query
+# Remove Query, uuid4, timedelta, send_reset_email from imports
+# Remove unused imports: Query, uuid4, timedelta, send_reset_email
+from fastapi import FastAPI, Request, Form, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-# import secrets # Keep secrets if needed elsewhere, otherwise uuid is used now
-from uuid import uuid4 # Import uuid4
-from datetime import datetime, timedelta # Import timedelta
+# import secrets # Keep secrets if needed elsewhere, uuid is removed
+from datetime import datetime # Remove timedelta if not used elsewhere
 import mysql.connector
-import bcrypt # Add bcrypt import
+import bcrypt # Ensure bcrypt is imported
 
-# Assuming email_utils.py exists with send_reset_email function (updated name)
-from email_utils import send_reset_email # Use send_reset_email as per prompt
 from auth_utils import verify_user, create_user
 from stripe_payments import router as stripe_payments_router # Add this import
 from stripe_webhook import router as stripe_webhook_router # Add this import
@@ -168,115 +166,42 @@ async def logout(request: Request):
 async def success_page(request: Request):
     return templates.TemplateResponse("success.html", {"request": request})
 
-# --- Add Forgot Password Routes ---
+# --- Remove Forgot Password Routes ---
+# The entire /forgot-password GET and POST routes are removed.
+# --- End Remove Forgot Password Routes ---
 
-@app.get("/forgot-password", response_class=HTMLResponse)
-async def forgot_password_form(request: Request):
-    # Ensure forgot_password.html exists in the templates directory
-    return templates.TemplateResponse("forgot_password.html", {"request": request, "message": None})
+# --- Form-Based Reset Password Routes ---
 
-# Replace the existing POST route implementation
-@app.post("/forgot-password")
-async def forgot_password_submit(request: Request, email: str = Form(...)): # Renamed from forgot_password_post for consistency
-    conn = None
-    cursor = None
-    try:
-        # Check if email exists in users table before generating token (optional but good practice)
-        conn_check = mysql.connector.connect(
-            host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
-        )
-        cursor_check = conn_check.cursor()
-        cursor_check.execute("SELECT email FROM users WHERE email = %s", (email,))
-        user_exists = cursor_check.fetchone()
-        cursor_check.close()
-        conn_check.close()
-
-        # Only proceed if the user exists to avoid leaking information
-        if user_exists:
-            token = str(uuid4()) # Use uuid4 for token generation
-            expires_at = datetime.utcnow() + timedelta(hours=1)
-
-            conn = mysql.connector.connect(
-                host=os.getenv("DB_HOST"),
-                user=os.getenv("DB_USER"),
-                password=os.getenv("DB_PASS"),
-                database=os.getenv("DB_NAME")
-            )
-            cursor = conn.cursor()
-            # Ensure password_resets table exists with columns: email, token, expires_at
-            cursor.execute("INSERT INTO password_resets (email, token, expires_at) VALUES (%s, %s, %s)", (email, token, expires_at))
-            conn.commit()
-
-            # Send email using the imported function
-            base_url = os.getenv("BASE_URL", "https://cricketstatspack.com")
-            reset_link = f"{base_url}/reset-password?token={token}"
-            send_reset_email(email, reset_link) # Use send_reset_email
-            print(f"Password reset email initiated for {email} (if user exists).")
-        else:
-             print(f"Password reset requested for non-existent email: {email}. No email sent.")
-
-
-        # Always return the success message regardless of whether the email existed
-        # This prevents attackers from confirming which emails are registered.
-        return templates.TemplateResponse("forgot_password.html", {
-            "request": request,
-            "message": "✅ If an account exists for this email, a password reset link has been sent." # Use 'message' key consistent with GET route
-        })
-
-    except mysql.connector.Error as err:
-        print(f"Database error during password reset for {email}: {err}")
-        return templates.TemplateResponse("forgot_password.html", {"request": request, "message": "⚠️ An error occurred. Please try again later."})
-    except Exception as e:
-        print(f"Unexpected error during password reset for {email}: {e}")
-        return templates.TemplateResponse("forgot_password.html", {"request": request, "message": "⚠️ An unexpected error occurred. Please try again later."})
-    finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
-            conn.close()
-
-# --- End Forgot Password Routes ---
-
-# --- Replace Reset Password Routes ---
-
-# Replace existing GET /reset-password
+# GET /reset-password
 @app.get("/reset-password", response_class=HTMLResponse)
 async def reset_password_form(request: Request):
-    # This version doesn't expect a token in the query parameter anymore
-    # Ensure reset_password.html is updated to not require/use a token variable
+    # Renders the form without needing a token
     return templates.TemplateResponse("reset_password.html", {"request": request, "error": None})
 
-# Replace existing POST /reset-password
-@app.post("/reset-password", response_class=HTMLResponse) # Changed decorator to match function name
+# POST /reset-password
+@app.post("/reset-password") # Removed response_class=HTMLResponse, will use RedirectResponse on success
 async def reset_password_submit(request: Request, username: str = Form(...), new_password: str = Form(...), confirm_password: str = Form(...)):
-    # Check if passwords match
+    # 1. Check if passwords match
     if new_password != confirm_password:
         print(f"Password mismatch for user {username} during reset attempt.")
-        # Pass username back to template if needed, e.g., to pre-fill the form
         return templates.TemplateResponse("reset_password.html", {
             "request": request,
             "error": "Passwords do not match.",
-            "username": username # Optional: pass username back
-        })
+            "username": username # Pass username back to pre-fill
+        }, status_code=400) # Use 400 for client error
 
-    # Imports are already global, but kept here as per prompt structure
-    # import bcrypt, mysql.connector
+    # Optional: Basic password validation (e.g., minimum length)
+    if len(new_password) < 8: # Example: Minimum length check
+         print(f"Password too short for user {username} during reset attempt.")
+         return templates.TemplateResponse("reset_password.html", {
+             "request": request,
+             "error": "Password must be at least 8 characters long.",
+             "username": username
+         }, status_code=400)
+
     conn = None
     cursor = None
     try:
-        # Basic password validation (optional but recommended)
-        if len(new_password) < 8: # Example: Minimum length check
-             print(f"Password too short for user {username} during reset attempt.")
-             return templates.TemplateResponse("reset_password.html", {
-                 "request": request,
-                 "error": "❌ Password must be at least 8 characters long.",
-                 "username": username # Optional: pass username back
-             })
-
-        # Hash the new password
-        hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"),
             user=os.getenv("DB_USER"),
@@ -284,40 +209,57 @@ async def reset_password_submit(request: Request, username: str = Form(...), new
             database=os.getenv("DB_NAME")
         )
         cursor = conn.cursor()
-        # Update password based on username
-        # Ensure password column is 'password_hash'
+
+        # 2. Check if username exists BEFORE trying to update
+        cursor.execute("SELECT username FROM users WHERE username = %s", (username,))
+        user_exists = cursor.fetchone()
+
+        if not user_exists:
+            print(f"Attempted password reset for non-existent username: {username}")
+            return templates.TemplateResponse("reset_password.html", {
+                "request": request,
+                "error": "Username not found.",
+                "username": username # Pass username back
+            }, status_code=404) # Use 404 for not found
+
+        # 3. Hash the new password
+        hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+        # 4. Update password_hash in the database
+        # Ensure your password column is named 'password_hash'
         update_query = "UPDATE users SET password_hash = %s WHERE username = %s"
         cursor.execute(update_query, (hashed_pw, username))
         conn.commit()
 
-        # Check if a row was actually updated (i.e., if the username existed)
-        if cursor.rowcount == 0:
-            print(f"Attempted password reset for non-existent username: {username}")
-            # Return error if username wasn't found
+        # Check if the update was successful (should be, as we checked existence)
+        if cursor.rowcount == 1:
+            print(f"Password successfully reset for username: {username}")
+            # 5. Redirect to login on success
+            # Optional: Add a success message query parameter for the login page to display
+            return RedirectResponse("/login?message=Password+reset+successfully", status_code=302)
+        else:
+            # This case should ideally not happen if the user exists check passed
+            print(f"Password reset failed unexpectedly for username: {username} after existence check.")
             return templates.TemplateResponse("reset_password.html", {
                 "request": request,
-                "error": "Username not found.",
-                "username": username # Optional: pass username back
-            })
-
-        print(f"Password successfully reset for username: {username}")
-        # Redirect to login page after successful reset
-        return RedirectResponse("/login?message=Password+reset+successfully", status_code=302)
+                "error": "An unexpected error occurred during password update.",
+                "username": username
+            }, status_code=500) # Use 500 for server error
 
     except mysql.connector.Error as err:
         print(f"Database error during password reset for username {username}: {err}")
         return templates.TemplateResponse("reset_password.html", {
             "request": request,
-            "error": "⚠️ A database error occurred. Please try again.",
-            "username": username # Optional: pass username back
-        })
+            "error": "A database error occurred. Please try again.",
+            "username": username
+        }, status_code=500)
     except Exception as e:
         print(f"Unexpected error during password reset for username {username}: {e}")
         return templates.TemplateResponse("reset_password.html", {
             "request": request,
-            "error": "⚠️ An unexpected error occurred. Please try again.",
-            "username": username # Optional: pass username back
-        })
+            "error": "An unexpected error occurred. Please try again.",
+            "username": username
+        }, status_code=500)
     finally:
         if cursor:
             cursor.close()
