@@ -86,7 +86,10 @@ async def register_submit(request: Request, username: str = Form(...), password:
 # Add the new subscribe route here
 @app.get("/subscribe", response_class=HTMLResponse)
 async def subscribe_page(request: Request):
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login")
     return templates.TemplateResponse("subscribe.html", {"request": request})
+
 
 # Dummy dashboard route (Updated as requested)
 # @app.get("/dashboard", dependencies=[Depends(require_login)], response_class=HTMLResponse) # Remove dependency
