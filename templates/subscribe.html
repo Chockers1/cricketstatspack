@@ -12,6 +12,8 @@
 
 <!-- Add more buttons for other plans if needed -->
 
+<p>Already have an account? <a href="/login">Login here</a> | <a href="/verify-security">Forgot password?</a></p>
+
 <script>
     document.getElementById('subscribe-monthly-button').addEventListener('click', function() {
         fetch('/create-checkout-session?plan=monthly', {
