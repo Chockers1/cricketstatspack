@@ -622,6 +622,7 @@ async def disable_user(request: Request, email: str = Form(...)):
 @app.post("/admin/enable")
 async def enable_user(request: Request, email: str = Form(...)):
     verify_admin(request) # Check if admin
+    # This correctly enables the user by setting is_disabled to False (0 in DB)
     if update_user_status(email, "is_disabled", False):
         print(f"✅ User '{email}' enabled successfully.")
     else:

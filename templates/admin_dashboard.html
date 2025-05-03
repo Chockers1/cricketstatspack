@@ -239,13 +239,13 @@
                 <td>{{ user.current_period_end_formatted or 'N/A' }}</td> {# Use formatted date #}
                 <td>{{ user.stripe_customer_id or 'None' }}</td>
                 <td>{{ user.reset_attempts }}</td>
-                <td> {# Status Column #}
+                <td> {# Status Column - This correctly shows Active/Disabled/Banned #}
                   {% if user.is_banned %}
                     🔴 Banned
                   {% elif user.is_disabled %}
                     ⚠️ Disabled
                   {% else %}
-                    ✅ Active
+                    ✅ Active {# Active is inferred if not banned or disabled #}
                   {% endif %}
                 </td>
                 <td> {# Actions Column #}
