@@ -3,6 +3,8 @@ import bcrypt
 import os
 from dotenv import load_dotenv
 import stripe # Import stripe
+import secrets # For generating secure random passwords
+import string # For password character set
 
 load_dotenv()
 
@@ -242,10 +244,11 @@ def get_admin_stats():
         result = cursor.fetchone()
         if result: stats["annual_subs"] = result["count"]
 
-        # Get user details - Add subscription_status and current_period_end
+        # Get user details - Add is_disabled and is_banned
         cursor.execute("""
             SELECT email, created_at, is_premium, stripe_customer_id, reset_attempts,
-                   subscription_type, subscription_status, current_period_end
+                   subscription_type, subscription_status, current_period_end,
+                   is_disabled, is_banned
             FROM users
             ORDER BY created_at DESC
         """)
@@ -328,3 +331,56 @@ def update_user_status(email: str, status_field: str, value: bool):
             conn.close()
 
 # --- End User Status Update Function ---
+
+# --- Admin Password Reset Function ---
+
+def admin_reset_password(email: str) -> bool:
+    """Generates a new random password, hashes it, and updates the user's record."""
+    conn = None
+    cursor = None
+    try:
+        # Generate a secure random password (e.g., 12 characters)
+        alphabet = string.ascii_letters + string.digits + string.punctuation
+        temp_password = ''.join(secrets.choice(alphabet) for i in range(12))
+        print(f"ℹ️ Generated temporary password for {email} (length {len(temp_password)}) - Not logging the password itself.")
+
+        # Hash the new password
+        hashed_pw = bcrypt.hashpw(temp_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor()
+
+        # Update password_hash and reset attempts
+        query = "UPDATE users SET password_hash = %s, reset_attempts = 0 WHERE email = %s"
+        params = (hashed_pw, email)
+
+        cursor.execute(query, params)
+        conn.commit()
+
+        if cursor.rowcount > 0:
+            print(f"✅ Password hash updated successfully for user '{email}'. User should use 'Forgot Password'.")
+            # IMPORTANT: Do NOT return the temp_password here.
+            # The admin should instruct the user to use the standard password reset flow.
+            return True
+        else:
+            print(f"⚠️ User '{email}' not found for password reset.")
+            return False
+
+    except mysql.connector.Error as err:
+        print(f"🔥 DB Error during admin password reset for {email}: {err}")
+        return False
+    except Exception as e:
+        print(f"🔥 Unexpected error during admin password reset for {email}: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+# --- End Admin Password Reset Function ---

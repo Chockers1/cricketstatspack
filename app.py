@@ -13,8 +13,8 @@ import mysql.connector
 import bcrypt # Ensure bcrypt is imported
 from typing import Optional # Import Optional for optional form fields
 
-# Import the new admin function and status update function
-from auth_utils import verify_user, create_user, get_admin_stats, update_user_status
+# Import the new admin function, status update function, and reset function
+from auth_utils import verify_user, create_user, get_admin_stats, update_user_status, admin_reset_password
 from stripe_payments import router as stripe_payments_router # Add this import
 from stripe_webhook import router as stripe_webhook_router # Add this import
 
@@ -626,6 +626,19 @@ async def enable_user(request: Request, email: str = Form(...)):
         print(f"✅ User '{email}' enabled successfully.")
     else:
         print(f"⚠️ Failed to enable user '{email}'.")
+    return RedirectResponse("/admin", status_code=302)
+
+@app.post("/admin/reset-password")
+async def handle_admin_reset_password(request: Request, email: str = Form(...)):
+    verify_admin(request) # Check if admin
+    if admin_reset_password(email):
+        print(f"✅ Admin initiated password reset for '{email}'.")
+        # Optionally add success message (e.g., using flash or query param)
+        # Example: return RedirectResponse("/admin?reset_success=1", status_code=302)
+    else:
+        print(f"⚠️ Failed to initiate admin password reset for '{email}'.")
+        # Optionally add error message
+        # Example: return RedirectResponse("/admin?reset_error=1", status_code=302)
     return RedirectResponse("/admin", status_code=302)
 
 # --- End Admin Action Routes ---
