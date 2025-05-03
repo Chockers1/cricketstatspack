@@ -233,9 +233,9 @@ def get_admin_stats():
         result = cursor.fetchone()
         if result: stats["annual_subs"] = result["count"]
 
-        # Get user details
+        # Get user details - Add subscription_type
         cursor.execute("""
-            SELECT email, created_at, is_premium, stripe_customer_id, reset_attempts
+            SELECT email, created_at, is_premium, stripe_customer_id, reset_attempts, subscription_type
             FROM users
             ORDER BY created_at DESC
         """)
