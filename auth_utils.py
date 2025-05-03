@@ -116,10 +116,10 @@ def verify_user(email: str, password: str) -> bool:
         print(f"🔥 Login error for email {email}: {e}")
         return False
     finally:
-        # Ensure initial connection is closed if it was opened and not closed earlier
-        if cursor and not cursor.is_closed():
+        # Ensure initial connection is closed using the updated conditions
+        if cursor: # Changed condition
              cursor.close()
-        if conn and conn.is_connected():
+        if conn and conn.is_connected(): # Changed condition
              conn.close()
 
 # Updated function signature to remove username
