@@ -1,52 +1,118 @@
-{% extends "base.html" %} {# Or use a different base if you have one for admin #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Dashboard</title>
+  {# Remove link to external CSS if styles are embedded #}
+  {# <link rel="stylesheet" href="/static/admin.css"> #}
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 2rem;
+      background-color: #f5f5f5;
+      color: #333;
+    }
+    h1 {
+      font-size: 2rem;
+      color: #2c3e50;
+    }
+    .card {
+      background: #fff;
+      padding: 1.5rem;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      margin-bottom: 2rem;
+    }
+    .card h2 {
+      font-size: 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 0.75rem;
+      text-align: left;
+    }
+    th {
+      background-color: #3498db;
+      color: white;
+    }
+    tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+    .logout {
+      text-align: right;
+      margin-bottom: 1rem;
+    }
+    .logout a {
+      text-decoration: none;
+      color: #e74c3c;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="logout">
+    <a href="/logout">Logout</a>
+  </div>
+  <h1>Admin Dashboard</h1>
 
-{% block title %}Admin Dashboard{% endblock %}
+  <div class="card">
+    <h2>Statistics</h2>
+    <div class="stats">
+      {# Adjust variable names to match what's passed from app.py #}
+      <div><strong>Total Users:</strong> {{ stats.total_users }}</div>
+      <div><strong>Premium Users:</strong> {{ stats.premium_users }}</div>
+      {# Add Monthly/Annual if available in stats dict #}
+      {# <div><strong>Monthly Subscribers:</strong> {{ stats.monthly_subs }}</div> #}
+      {# <div><strong>Annual Subscribers:</strong> {{ stats.annual_subs }}</div> #}
+      <div><strong>Missing Stripe IDs:</strong> {{ stats.missing_stripe_id }}</div> {# Corrected variable name #}
+      {# Add Reset Requests if available in stats dict #}
+      {# <div><strong>Password Reset Requests:</strong> {{ stats.total_reset_requests }}</div> #}
+    </div>
+  </div>
 
-{% block content %}
-<h2>Admin Dashboard</h2>
-
-{# Display Stats Cards/Section #}
-<h3>Statistics</h3>
-<div>
-    <p><strong>Total Users:</strong> {{ stats.total_users }}</p>
-    <p><strong>Premium Users:</strong> {{ stats.premium_users }}</p>
-    <p><strong>Users Missing Stripe ID:</strong> {{ stats.missing_stripe_id }}</p>
-    {# Add other stats if needed #}
-</div>
-<hr>
-
-{# Display User Table #}
-<h3>User Details</h3>
-<table border="1" style="width:100%; border-collapse: collapse;">
-    <thead>
+  <div class="card">
+    <h2>User Details</h2>
+    <table>
+      <thead>
         <tr>
-            <th>Email</th>
-            <th>Registered On</th>
-            <th>Premium?</th>
-            <th>Stripe Customer ID</th>
-            <th>Reset Attempts</th>
+          <th>Email</th>
+          <th>Registered On</th>
+          <th>Premium?</th>
+          <th>Stripe Customer ID</th>
+          <th>Reset Attempts</th>
         </tr>
-    </thead>
-    <tbody>
+      </thead>
+      <tbody>
         {% if users %}
             {% for user in users %}
             <tr>
-                <td>{{ user.email }}</td>
-                <td>{{ user.created_at_formatted or user.created_at or 'N/A' }}</td> {# Display formatted or raw date #}
-                <td>{{ 'Yes' if user.is_premium else 'No' }}</td>
-                <td>{{ user.stripe_customer_id or 'None' }}</td>
-                <td>{{ user.reset_attempts }}</td>
+              <td>{{ user.email }}</td>
+              {# Use the pre-formatted date if available, otherwise format here #}
+              <td>{{ user.created_at_formatted or (user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else 'N/A') }}</td>
+              <td>{{ 'Yes' if user.is_premium else 'No' }}</td>
+              <td>{{ user.stripe_customer_id or 'None' }}</td>
+              <td>{{ user.reset_attempts }}</td>
             </tr>
             {% endfor %}
         {% else %}
             <tr>
+                {# Update colspan if more columns are added #}
                 <td colspan="5">No user data available or error fetching data.</td>
             </tr>
         {% endif %}
-    </tbody>
-</table>
-
-{# Optional: Link back to main dashboard or logout #}
-<p><a href="/dashboard">Back to User Dashboard</a> | <a href="/logout">Logout</a></p>
-
-{% endblock %}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>
