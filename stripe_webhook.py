@@ -3,14 +3,15 @@ from fastapi import APIRouter, Request, Header, HTTPException
 import stripe
 import os
 import mysql.connector
+from datetime import datetime # Import datetime
 
 router = APIRouter()
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
 
-# Modify function signature to accept customer_id and subscription_type
-def update_subscription(email, is_active, customer_id=None, subscription_type=None):
+# Modify function signature to accept status and period_end
+def update_subscription(email, is_active, customer_id=None, subscription_type=None, status=None, period_end=None):
     conn = None
     cursor = None
     try:
@@ -24,24 +25,29 @@ def update_subscription(email, is_active, customer_id=None, subscription_type=No
 
         # Build query dynamically based on whether it's activation or deactivation
         if is_active and customer_id and subscription_type:
-            # Update is_premium, stripe_customer_id, and subscription_type on activation
+            # Update is_premium, stripe_customer_id, subscription_type, status, and period_end on activation
             query = """
                 UPDATE users
-                SET is_premium = %s, stripe_customer_id = %s, subscription_type = %s
+                SET is_premium = %s, stripe_customer_id = %s, subscription_type = %s,
+                    subscription_status = %s, current_period_end = %s
                 WHERE email = %s
             """
-            params = (1, customer_id, subscription_type, email)
-            print(f"✅ [Webhook] Activating subscription for {email}. Type: {subscription_type}, Customer ID: {customer_id}")
+            params = (1, customer_id, subscription_type, status, period_end, email)
+            print(f"✅ [Webhook] Activating subscription for {email}. Type: {subscription_type}, CustID: {customer_id}, Status: {status}, Period End: {period_end}")
         elif not is_active:
-            # Only update is_premium on deactivation (keep customer_id and type)
+            # Only update is_premium on deactivation (keep customer_id, type, status, period_end)
+            # Optionally clear status and period_end here if desired upon cancellation
             query = """
-                UPDATE users SET is_premium = %s WHERE email = %s
+                UPDATE users SET is_premium = %s, subscription_status = %s
+                WHERE email = %s
             """
-            params = (0, email)
-            print(f"❌ [Webhook] Deactivating subscription for {email}.")
+            # Set status to 'canceled' or similar on deactivation event
+            deactivation_status = "canceled" # Or derive from event if needed
+            params = (0, deactivation_status, email)
+            print(f"❌ [Webhook] Deactivating subscription for {email}. Setting status to {deactivation_status}.")
         else:
             # Handle cases where required info might be missing for activation
-            print(f"⚠️ [Webhook] Insufficient info to update subscription for {email}. Active: {is_active}, CustID: {customer_id}, SubType: {subscription_type}")
+            print(f"⚠️ [Webhook] Insufficient info to update subscription for {email}. Active: {is_active}, CustID: {customer_id}, SubType: {subscription_type}, Status: {status}, PeriodEnd: {period_end}")
             return # Don't proceed if info is missing for activation
 
         cursor.execute(query, params)
@@ -106,12 +112,14 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
         # Now use the retrieved 'session' object which includes line_items
         email = session.get('customer_email')
         customer_id = session.get('customer')
-        # subscription_id = session.get('subscription') # Keep if needed for logging
+        subscription_id = session.get('subscription') # Get subscription ID
 
         # Ensure essential data is present
         if email and customer_id:
             subscription_type = "unknown" # Default
             price_id = None
+            status = None # Default status
+            period_end = None # Default period end
 
             # --- Try extracting price_id directly from the retrieved session line_items ---
             try:
@@ -139,16 +147,33 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
                 else:
                     print("⚠️ [Webhook] Failed to determine price_id. Subscription type remains 'unknown'.")
 
+                # --- Retrieve subscription details if ID exists ---
+                if subscription_id:
+                    try:
+                        sub = stripe.Subscription.retrieve(subscription_id)
+                        status = sub.get("status") # e.g., 'active', 'trialing', 'incomplete'
+                        period_end_ts = sub.get("current_period_end")
+                        if period_end_ts:
+                            period_end = datetime.utcfromtimestamp(period_end_ts) # Convert timestamp
+                        print(f"ℹ️ [Webhook] Retrieved subscription {subscription_id} details. Status: {status}, Period End: {period_end}")
+                    except stripe.error.StripeError as e:
+                        print(f"🔥 [Webhook] Stripe error retrieving subscription {subscription_id}: {e}")
+                        # Decide if you still want to grant access even if sub retrieval fails
+                        status = "error_retrieving" # Mark status as problematic
+                    except Exception as e:
+                        print(f"🔥 [Webhook] Unexpected error retrieving subscription {subscription_id}: {e}")
+                        status = "error_retrieving"
 
-                # Call updated function with determined type
-                update_subscription(email, True, customer_id, subscription_type)
+                # Call updated function with determined type, status, and period_end
+                update_subscription(email, True, customer_id, subscription_type, status, period_end)
 
             except Exception as e:
                  # Catch errors during price_id extraction or type determination
                  print(f"🔥 [Webhook] Error processing session data for {email}: {e}")
                  # Decide if you still want to grant premium access despite the error
-                 print(f"⚠️ [Webhook] Granting premium access for {email} despite error, type set to 'unknown'.")
-                 update_subscription(email, True, customer_id, "unknown") # Grant access with unknown type
+                 print(f"⚠️ [Webhook] Granting premium access for {email} despite error, type set to 'unknown', status/period_end set to None.")
+                 # Pass None for status and period_end in the fallback
+                 update_subscription(email, True, customer_id, "unknown", None, None)
 
         else:
             # Log missing essential data more clearly
@@ -156,20 +181,38 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
 
     # Handle subscription deleted or payment failed
     elif event_type in ['customer.subscription.deleted', 'invoice.payment_failed']:
-        email = data.get('customer_email')
+        email = None
         customer_id = data.get('customer') # Get customer ID for potential lookup
 
-        # If email not directly on object, try fetching customer details
-        if not email and customer_id:
-             try:
-                 customer = stripe.Customer.retrieve(customer_id)
-                 email = customer.email
-             except stripe.error.StripeError as e:
-                 print(f"🔥 [Webhook] Error retrieving customer {customer_id} for event {event_type}: {e}")
+        # For subscription deleted, email might be on the subscription object itself
+        if event_type == 'customer.subscription.deleted':
+             # Try getting email from customer details attached to subscription if available
+             if data.get('customer_details') and data['customer_details'].get('email'):
+                 email = data['customer_details']['email']
+             # Fallback: use customer ID if email not directly available
+             elif not email and customer_id:
+                 try:
+                     customer = stripe.Customer.retrieve(customer_id)
+                     email = customer.email
+                 except stripe.error.StripeError as e:
+                     print(f"🔥 [Webhook] Error retrieving customer {customer_id} for event {event_type}: {e}")
+
+        # For invoice payment failed, email is often directly on the invoice object
+        elif event_type == 'invoice.payment_failed':
+            email = data.get('customer_email')
+            # Fallback: use customer ID if email not on invoice
+            if not email and customer_id:
+                 try:
+                     customer = stripe.Customer.retrieve(customer_id)
+                     email = customer.email
+                 except stripe.error.StripeError as e:
+                     print(f"🔥 [Webhook] Error retrieving customer {customer_id} for event {event_type}: {e}")
+
 
         if email:
             # Call update_subscription with is_active=False
-            update_subscription(email, False) # No need for customer_id or type on deactivation
+            # Pass status based on event type if needed, otherwise handled in update_subscription
+            update_subscription(email, False) # Status/period_end not strictly needed for deactivation query
         else:
              print(f"⚠️ [Webhook] {event_type} event received without customer_email or could not retrieve.")
 

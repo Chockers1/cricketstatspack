@@ -122,6 +122,15 @@
     .badge-annual { background-color: #ffc107; color: #333; } /* Yellow for Annual */
     .badge-unknown { background-color: #dc3545; } /* Red for Unknown */
     .badge-none { background-color: #e9ecef; color: #6c757d; } /* Light grey for None */
+    /* Add styles for subscription status */
+    .badge-active { background-color: #28a745; } /* Green */
+    .badge-trialing { background-color: #17a2b8; } /* Teal */
+    .badge-past_due { background-color: #ffc107; color: #333; } /* Yellow */
+    .badge-canceled { background-color: #dc3545; } /* Red */
+    .badge-incomplete { background-color: #fd7e14; } /* Orange */
+    .badge-incomplete_expired { background-color: #6f42c1; } /* Purple */
+    .badge-unpaid { background-color: #dc3545; } /* Red */
+    .badge-error_retrieving { background-color: #6c757d; } /* Grey */
 
   </style>
 </head>
@@ -168,6 +177,8 @@
             <th>Registered On</th>
             <th>Premium?</th>
             <th>Subscription</th> {# Added Column #}
+            <th>Sub Status</th> {# Added Column #}
+            <th>Period Ends</th> {# Added Column #}
             <th>Stripe Customer ID</th>
             <th>Reset Attempts</th>
           </tr>
@@ -189,13 +200,20 @@
                         {{ user.subscription_type or 'N/A' }}
                     </span>
                 </td>
+                <td> {# Subscription Status Badge #}
+                    {% set sub_status = user.subscription_status|lower|replace('_', '-') if user.subscription_status else 'none' %}
+                    <span class="badge badge-{{ sub_status }}">
+                        {{ user.subscription_status or 'N/A' }}
+                    </span>
+                </td>
+                <td>{{ user.current_period_end_formatted or 'N/A' }}</td> {# Use formatted date #}
                 <td>{{ user.stripe_customer_id or 'None' }}</td>
                 <td>{{ user.reset_attempts }}</td>
               </tr>
               {% endfor %}
           {% else %}
               <tr>
-                  <td colspan="6">No user data available or error fetching data.</td> {# Updated colspan #}
+                  <td colspan="8">No user data available or error fetching data.</td> {# Updated colspan to 8 #}
               </tr>
           {% endif %}
         </tbody>

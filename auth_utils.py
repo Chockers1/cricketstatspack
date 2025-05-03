@@ -233,19 +233,24 @@ def get_admin_stats():
         result = cursor.fetchone()
         if result: stats["annual_subs"] = result["count"]
 
-        # Get user details - Add subscription_type
+        # Get user details - Add subscription_status and current_period_end
         cursor.execute("""
-            SELECT email, created_at, is_premium, stripe_customer_id, reset_attempts, subscription_type
+            SELECT email, created_at, is_premium, stripe_customer_id, reset_attempts,
+                   subscription_type, subscription_status, current_period_end
             FROM users
             ORDER BY created_at DESC
         """)
         users = cursor.fetchall()
 
-        # Format created_at for better display if needed (optional)
+        # Format created_at and current_period_end for better display if needed (optional)
         for user in users:
             if user.get('created_at'):
-                 # Example formatting, adjust as desired
                  user['created_at_formatted'] = user['created_at'].strftime('%Y-%m-%d %H:%M')
+            # Format period end if it exists
+            if user.get('current_period_end'):
+                 user['current_period_end_formatted'] = user['current_period_end'].strftime('%Y-%m-%d')
+            else:
+                 user['current_period_end_formatted'] = 'N/A' # Or None, or empty string
 
 
     except mysql.connector.Error as err:
