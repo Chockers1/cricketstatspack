@@ -10,6 +10,15 @@ load_dotenv()
 # print("DB pass:", os.getenv("DB_PASS"))
 # print("DB name:", os.getenv("DB_NAME"))
 
+# Predefined security questions
+SECURITY_QUESTIONS = [
+    "What was your first pet's name?",
+    "What is your mother's maiden name?",
+    "What was the name of your elementary school?",
+    "In what city were you born?",
+    "What is your favorite book?",
+]
+
 def verify_user(username: str, password: str) -> bool:
     try:
         conn = mysql.connector.connect(

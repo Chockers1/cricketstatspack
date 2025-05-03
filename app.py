@@ -170,33 +170,132 @@ async def success_page(request: Request):
 # The entire /forgot-password GET and POST routes are removed.
 # --- End Remove Forgot Password Routes ---
 
-# --- Form-Based Reset Password Routes ---
+# --- Security Question Verification Routes ---
+
+@app.get("/verify-security", response_class=HTMLResponse)
+async def verify_security_form(request: Request):
+    # Renders the security question verification form
+    return templates.TemplateResponse("verify_security.html", {"request": request, "error": None})
+
+@app.post("/verify-security") # Removed response_class=HTMLResponse, will use RedirectResponse on success
+async def verify_security_submit(
+    request: Request,
+    username: str = Form(...),
+    answer1: str = Form(...),
+    answer2: str = Form(...)
+):
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor(dictionary=True) # Use dictionary cursor
+
+        # Fetch user and security answers
+        cursor.execute("SELECT id, security_answer_1_hash, security_answer_2_hash, reset_attempts FROM users WHERE username = %s", (username,))
+        user = cursor.fetchone()
+
+        # Use a generic error message to avoid revealing if a user exists
+        generic_error = "Invalid username or answers."
+
+        if not user:
+            print(f"Security verification attempt for non-existent user: {username}")
+            return templates.TemplateResponse("verify_security.html", {"request": request, "error": generic_error}, status_code=400)
+
+        # Check reset attempts
+        if user.get('reset_attempts', 0) >= 3: # Default to 0 if column is somehow NULL
+            print(f"Security verification blocked for user {username} due to too many attempts.")
+            return templates.TemplateResponse("verify_security.html", {"request": request, "error": "Too many failed attempts. Please contact support."}, status_code=403) # Use 403 Forbidden
+
+        # Verify answers using bcrypt
+        # Ensure security answer columns exist and are not NULL before encoding
+        sa1_hash = user.get('security_answer_1_hash')
+        sa2_hash = user.get('security_answer_2_hash')
+
+        if not sa1_hash or not sa2_hash:
+             print(f"Security answers missing for user {username}.")
+             # Increment attempts even if answers are missing to prevent probing
+             cursor.execute("UPDATE users SET reset_attempts = reset_attempts + 1 WHERE id = %s", (user['id'],))
+             conn.commit()
+             return templates.TemplateResponse("verify_security.html", {"request": request, "error": generic_error}, status_code=400)
+
+        correct1 = bcrypt.checkpw(answer1.encode('utf-8'), sa1_hash.encode('utf-8'))
+        correct2 = bcrypt.checkpw(answer2.encode('utf-8'), sa2_hash.encode('utf-8'))
+
+        if correct1 and correct2:
+            print(f"Security verification successful for user: {username}")
+            # Reset attempt count
+            cursor.execute("UPDATE users SET reset_attempts = 0 WHERE id = %s", (user['id'],))
+            conn.commit()
+
+            # Store username in session temporarily for reset step
+            request.session['reset_user'] = username
+            return RedirectResponse("/reset-password", status_code=302)
+        else:
+            print(f"Security verification failed for user: {username}")
+            # Increment attempt count
+            cursor.execute("UPDATE users SET reset_attempts = reset_attempts + 1 WHERE id = %s", (user['id'],))
+            conn.commit()
+            return templates.TemplateResponse("verify_security.html", {"request": request, "error": generic_error}, status_code=400)
+
+    except mysql.connector.Error as err:
+        print(f"Database error during security verification for {username}: {err}")
+        return templates.TemplateResponse("verify_security.html", {"request": request, "error": "A database error occurred."}, status_code=500)
+    except Exception as e:
+        print(f"Unexpected error during security verification for {username}: {e}")
+        return templates.TemplateResponse("verify_security.html", {"request": request, "error": "An unexpected error occurred."}, status_code=500)
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+# --- End Security Question Verification Routes ---
+
+
+# --- Form-Based Reset Password Routes (Updated for Session Verification) ---
 
 # GET /reset-password
 @app.get("/reset-password", response_class=HTMLResponse)
 async def reset_password_form(request: Request):
-    # Renders the form without needing a token
+    # Check if user has passed security verification via session
+    if 'reset_user' not in request.session:
+        print("Access denied to /reset-password GET: No 'reset_user' in session.")
+        # Redirect to the start of the process if session key is missing
+        return RedirectResponse("/verify-security", status_code=303) # Use 303 See Other
+
+    # User is verified, render the reset form
     return templates.TemplateResponse("reset_password.html", {"request": request, "error": None})
 
 # POST /reset-password
-@app.post("/reset-password") # Removed response_class=HTMLResponse, will use RedirectResponse on success
-async def reset_password_submit(request: Request, username: str = Form(...), new_password: str = Form(...), confirm_password: str = Form(...)):
+@app.post("/reset-password") # Removed response_class=HTMLResponse, uses RedirectResponse
+async def reset_password_submit(request: Request, new_password: str = Form(...), confirm_password: str = Form(...)):
+    # Double-check session key existence on POST
+    if 'reset_user' not in request.session:
+        print("Access denied to /reset-password POST: No 'reset_user' in session.")
+        return RedirectResponse("/verify-security", status_code=303)
+
+    username = request.session['reset_user'] # Get username from session
+
     # 1. Check if passwords match
     if new_password != confirm_password:
         print(f"Password mismatch for user {username} during reset attempt.")
+        # Note: We don't pass username back to template anymore
         return templates.TemplateResponse("reset_password.html", {
             "request": request,
-            "error": "Passwords do not match.",
-            "username": username # Pass username back to pre-fill
-        }, status_code=400) # Use 400 for client error
+            "error": "Passwords do not match."
+        }, status_code=400)
 
     # Optional: Basic password validation (e.g., minimum length)
     if len(new_password) < 8: # Example: Minimum length check
          print(f"Password too short for user {username} during reset attempt.")
          return templates.TemplateResponse("reset_password.html", {
              "request": request,
-             "error": "Password must be at least 8 characters long.",
-             "username": username
+             "error": "Password must be at least 8 characters long."
          }, status_code=400)
 
     conn = None
@@ -210,55 +309,44 @@ async def reset_password_submit(request: Request, username: str = Form(...), new
         )
         cursor = conn.cursor()
 
-        # 2. Check if username exists BEFORE trying to update
-        cursor.execute("SELECT username FROM users WHERE username = %s", (username,))
-        user_exists = cursor.fetchone()
-
-        if not user_exists:
-            print(f"Attempted password reset for non-existent username: {username}")
-            return templates.TemplateResponse("reset_password.html", {
-                "request": request,
-                "error": "Username not found.",
-                "username": username # Pass username back
-            }, status_code=404) # Use 404 for not found
-
-        # 3. Hash the new password
+        # 2. Hash the new password
         hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-        # 4. Update password_hash in the database
+        # 3. Update password_hash in the database using username from session
         # Ensure your password column is named 'password_hash'
         update_query = "UPDATE users SET password_hash = %s WHERE username = %s"
         cursor.execute(update_query, (hashed_pw, username))
         conn.commit()
 
-        # Check if the update was successful (should be, as we checked existence)
+        # Check if the update was successful
         if cursor.rowcount == 1:
             print(f"Password successfully reset for username: {username}")
-            # 5. Redirect to login on success
-            # Optional: Add a success message query parameter for the login page to display
+            # 4. Clear the session key and redirect to login on success
+            request.session.pop('reset_user', None) # Safely remove the key
             return RedirectResponse("/login?message=Password+reset+successfully", status_code=302)
         else:
-            # This case should ideally not happen if the user exists check passed
-            print(f"Password reset failed unexpectedly for username: {username} after existence check.")
+            # This might happen if the user was deleted between verification and reset
+            print(f"Password reset failed for username: {username}. User might no longer exist.")
+            # Clear the potentially stale session key
+            request.session.pop('reset_user', None)
             return templates.TemplateResponse("reset_password.html", {
                 "request": request,
-                "error": "An unexpected error occurred during password update.",
-                "username": username
-            }, status_code=500) # Use 500 for server error
+                "error": "Could not update password. User may not exist.",
+            }, status_code=404) # User not found during update
 
     except mysql.connector.Error as err:
         print(f"Database error during password reset for username {username}: {err}")
+        # Don't clear session key on DB error, user might retry
         return templates.TemplateResponse("reset_password.html", {
             "request": request,
             "error": "A database error occurred. Please try again.",
-            "username": username
         }, status_code=500)
     except Exception as e:
         print(f"Unexpected error during password reset for username {username}: {e}")
+        # Don't clear session key on unexpected error
         return templates.TemplateResponse("reset_password.html", {
             "request": request,
             "error": "An unexpected error occurred. Please try again.",
-            "username": username
         }, status_code=500)
     finally:
         if cursor:
