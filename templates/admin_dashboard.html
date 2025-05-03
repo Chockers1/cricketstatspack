@@ -275,10 +275,10 @@
                     </form>
                   {% endif %}
 
-                  {# Replace Reset Password Button with Input Form #}
+                  {# Reset Password Input Form - Confirming structure #}
                   <form action="/admin/reset-password" method="post" style="display:inline; margin-top: 5px;">
                       <input type="hidden" name="email" value="{{ user.email }}">
-                      <input type="text" name="new_password" placeholder="New Password" required>
+                      <input type="text" name="new_password" placeholder="New Password" required> {# Correct name attribute #}
                       <button type="submit">Reset Password</button>
                   </form>
                 </td>
