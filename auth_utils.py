@@ -56,7 +56,8 @@ def verify_user(username: str, password: str) -> bool:
         print("🔥 Login error:", e)
         return False
 
-def create_user(username: str, email: str, password: str) -> bool:
+# Updated function signature to include security questions and answers
+def create_user(username: str, email: str, password: str, q1: str, a1: str, q2: str, a2: str) -> bool:
     conn = None
     cursor = None
     try:
@@ -79,18 +80,32 @@ def create_user(username: str, email: str, password: str) -> bool:
             return False  # Already exists
 
         # Hash the password
-        hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+        hashed_pw = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        # Hash the security answers
+        hashed_a1 = bcrypt.hashpw(a1.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        hashed_a2 = bcrypt.hashpw(a2.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-        # Insert new user
-        # Note: Using 'password_hash' column name based on verify_user. The prompt used 'password'. Adjust if needed.
-        query = "INSERT INTO users (username, password_hash, email, is_premium) VALUES (%s, %s, %s, %s)"
+        # Insert new user with security questions and hashed answers
+        query = """
+            INSERT INTO users (
+                username, password_hash, email, is_premium,
+                security_question_1, security_answer_1_hash,
+                security_question_2, security_answer_2_hash,
+                reset_attempts  -- Initialize reset_attempts
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
         cursor.execute(
             query,
-            (username, hashed_pw, email, 0) # Set is_premium to 0
+            (
+                username, hashed_pw, email, 0, # Set is_premium to 0
+                q1, hashed_a1, q2, hashed_a2,
+                0 # Initialize reset_attempts to 0
+            )
         )
         conn.commit()
-        print(f"User '{username}' created successfully.")
-        print("✅ Hashed password stored:", hashed_pw) # Add this debug line
+        print(f"User '{username}' created successfully with security questions.")
+        # print("✅ Hashed password stored:", hashed_pw) # Optional debug line
         return True
 
     except mysql.connector.Error as err:

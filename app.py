@@ -85,14 +85,41 @@ async def register_form(request: Request):
 
 # Registration submission
 @app.post("/register")
-async def register_submit(request: Request, username: str = Form(...), email: str = Form(...), password: str = Form(...)):
-    # ✅ Fix: Correct parameter order for create_user()
-    if create_user(username, email, password): # Corrected argument order
+async def register_submit(
+    request: Request,
+    username: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    security_question_1: str = Form(...),
+    security_answer_1: str = Form(...),
+    security_question_2: str = Form(...),
+    security_answer_2: str = Form(...)
+):
+    # Pass all fields including security questions/answers to create_user
+    if create_user(
+        username,
+        email,
+        password,
+        security_question_1,
+        security_answer_1,
+        security_question_2,
+        security_answer_2
+    ):
         print(f"✅ User '{username}' created successfully — redirecting to login")
         return RedirectResponse(url="/login", status_code=302)
     else:
-        print(f"❌ Registration failed for user '{username}' — username might already exist")
-        return templates.TemplateResponse("register.html", {"request": request, "error": "Username already exists or invalid input"})
+        print(f"❌ Registration failed for user '{username}' — username might already exist or invalid input")
+        # Pass back submitted values (except password) to pre-fill form on error
+        return templates.TemplateResponse("register.html", {
+            "request": request,
+            "error": "Username already exists or invalid input",
+            "username": username,
+            "email": email,
+            "security_question_1": security_question_1,
+            "security_answer_1": security_answer_1, # Consider if you want to repopulate answers
+            "security_question_2": security_question_2,
+            "security_answer_2": security_answer_2  # Consider if you want to repopulate answers
+        })
 
 # Add the new subscribe route here
 @app.get("/subscribe", response_class=HTMLResponse)
