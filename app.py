@@ -434,3 +434,124 @@ async def reset_password_submit(request: Request, new_password: str = Form(...),
 
 # --- End Reset Password Routes ---
 
+# --- Change Password Routes ---
+
+@app.get("/change-password", response_class=HTMLResponse)
+async def change_password_form(request: Request):
+    # Check if user is logged in
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login", status_code=303)
+    # Render the change password form
+    return templates.TemplateResponse("change_password.html", {"request": request, "error": None, "success": None})
+
+
+@app.post("/change-password") # Removed response_class=HTMLResponse, uses Redirect or TemplateResponse
+async def change_password_submit(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...)
+):
+    # Check if user is logged in
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login", status_code=303)
+
+    username = request.session["user_id"]
+
+    # 1. Verify current password using auth_utils.verify_user
+    if not verify_user(username, current_password):
+        print(f"Change password failed for {username}: Incorrect current password.")
+        return templates.TemplateResponse("change_password.html", {
+            "request": request,
+            "error": "Current password is incorrect.",
+            "success": None
+        }, status_code=400)
+
+    # 2. Check if new passwords match
+    if new_password != confirm_password:
+        print(f"Change password failed for {username}: New passwords do not match.")
+        return templates.TemplateResponse("change_password.html", {
+            "request": request,
+            "error": "New passwords do not match.",
+            "success": None
+        }, status_code=400)
+
+    # 3. Optional: Basic password validation (e.g., minimum length)
+    if len(new_password) < 8: # Example: Minimum length check
+         print(f"Change password failed for {username}: New password too short.")
+         return templates.TemplateResponse("change_password.html", {
+             "request": request,
+             "error": "New password must be at least 8 characters long.",
+             "success": None
+         }, status_code=400)
+
+    # 4. Optional: Check if new password is the same as the old one
+    if current_password == new_password:
+        print(f"Change password failed for {username}: New password is the same as the current one.")
+        return templates.TemplateResponse("change_password.html", {
+            "request": request,
+            "error": "New password cannot be the same as the current password.",
+            "success": None
+        }, status_code=400)
+
+
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor()
+
+        # 5. Hash the new password
+        hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+        # 6. Update password_hash in the database
+        update_query = "UPDATE users SET password_hash = %s WHERE username = %s"
+        cursor.execute(update_query, (hashed_pw, username))
+        conn.commit()
+
+        # Check if the update was successful
+        if cursor.rowcount == 1:
+            print(f"Password successfully changed for username: {username}")
+            # Render the same page with a success message
+            return templates.TemplateResponse("change_password.html", {
+                "request": request,
+                "error": None,
+                "success": "Password changed successfully!"
+            })
+            # Or redirect to dashboard: return RedirectResponse("/dashboard?message=Password+changed+successfully", status_code=302)
+        else:
+            # This case should ideally not happen if the user is logged in
+            print(f"Password change failed unexpectedly for username: {username} after verification.")
+            return templates.TemplateResponse("change_password.html", {
+                "request": request,
+                "error": "An unexpected error occurred during password update.",
+                "success": None
+            }, status_code=500)
+
+    except mysql.connector.Error as err:
+        print(f"Database error during password change for username {username}: {err}")
+        return templates.TemplateResponse("change_password.html", {
+            "request": request,
+            "error": "A database error occurred. Please try again.",
+            "success": None
+        }, status_code=500)
+    except Exception as e:
+        print(f"Unexpected error during password change for username {username}: {e}")
+        return templates.TemplateResponse("change_password.html", {
+            "request": request,
+            "error": "An unexpected error occurred. Please try again.",
+            "success": None
+        }, status_code=500)
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+# --- End Change Password Routes ---
+
