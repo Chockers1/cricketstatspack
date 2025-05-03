@@ -108,7 +108,7 @@ async def register_submit(
         print(f"❌ Registration failed for email '{email}' — email might already exist")
         return templates.TemplateResponse("register.html", {
             "request": request,
-            "error": "Email already exists."
+            "error": "An account with this email already exists." # Updated error message
         })
 
 # Add the new subscribe route here

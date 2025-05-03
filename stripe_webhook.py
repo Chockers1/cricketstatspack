@@ -28,14 +28,14 @@ def update_subscription(email, is_active):
         conn.commit()
         # Check if any row was actually updated
         if cursor.rowcount == 0:
-            print(f"⚠️ No user found with email {email} to update subscription status.")
+            print(f"⚠️ [Webhook] No user found with email {email} to update subscription status.") # Added context
         else:
-            print(f"Subscription status updated for {email} to {is_active}.")
+            print(f"✅ [Webhook] Subscription status updated for {email} to {is_active}.") # Added context
 
     except mysql.connector.Error as err:
-        print(f"Database error updating subscription for {email}: {err}")
+        print(f"🔥 [Webhook] Database error updating subscription for {email}: {err}") # Added context
     except Exception as e:
-        print(f"Unexpected error updating subscription for {email}: {e}")
+        print(f"🔥 [Webhook] Unexpected error updating subscription for {email}: {e}") # Added context
     finally:
         if cursor:
             cursor.close()
