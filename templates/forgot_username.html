@@ -1,0 +1,16 @@
+{% extends "base.html" %} {# Assuming you have a base.html template #}
+
+{% block title %}Forgot Username{% endblock %}
+
+{% block content %}
+<h2>Forgot Your Username?</h2>
+<p>Enter your email address below. If an account is associated with this email, we will send the username to it.</p> {# Updated text #}
+
+<form method="post" action="/forgot-username">
+    <label for="email">Your Email:</label><br>
+    <input type="email" id="email" name="email" required><br><br>
+    <button type="submit">Retrieve Username</button>
+</form>
+
+<p><a href="/login">Back to Login</a></p>
+{% endblock %}

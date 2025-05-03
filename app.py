@@ -565,3 +565,55 @@ async def change_password_submit(
 
 # --- End Change Password Routes ---
 
+# --- Forgot Username Routes ---
+
+@app.get("/forgot-username", response_class=HTMLResponse)
+async def forgot_username_form(request: Request):
+    # Renders the form asking for the user's email
+    return templates.TemplateResponse("forgot_username.html", {"request": request})
+
+
+@app.post("/forgot-username") # Removed response_class=HTMLResponse, uses TemplateResponse
+async def forgot_username_submit(request: Request, email: str = Form(...)):
+    conn = None
+    cursor = None
+    username_found = None # Variable to store username if found
+
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT username FROM users WHERE email = %s", (email,))
+        result = cursor.fetchone()
+
+        if result:
+            username_found = result['username']
+            # Log internally or send email here if desired
+            print(f"Username recovery requested for email {email}. Username: {username_found}")
+            # TODO: Implement email sending logic if required
+            # send_username_email(email, username_found)
+
+    except mysql.connector.Error as err:
+        print(f"Database error during username lookup for email {email}: {err}")
+        # Proceed to show generic message even on DB error to avoid information leak
+    except Exception as e:
+        print(f"Unexpected error during username lookup for email {email}: {e}")
+        # Proceed to show generic message
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+    # Always render the result page with a generic message, regardless of whether the email was found or if an error occurred.
+    # Do NOT pass the actual username to the template.
+    return templates.TemplateResponse("forgot_username_result.html", {
+        "request": request
+    })
+
+# --- End Forgot Username Routes ---
+
