@@ -81,11 +81,10 @@ async def login_submit(request: Request, email: str = Form(...), password: str =
 async def register_form(request: Request):
     return templates.TemplateResponse("register.html", {"request": request, "error": None})
 
-# Registration submission (Updated in previous step)
+# Registration submission (Updated for auto-login)
 @app.post("/register")
 async def register_submit(
     request: Request,
-    # username removed
     email: str = Form(...),
     password: str = Form(...),
     security_question_1: str = Form(...),
@@ -93,24 +92,65 @@ async def register_submit(
     security_question_2: str = Form(...),
     security_answer_2: str = Form(...)
 ):
-    # Pass all fields including security questions/answers to create_user, excluding username
-    if create_user(
-        # username removed
+    # Try to create user
+    success = create_user(
         email,
         password,
         security_question_1,
         security_answer_1,
         security_question_2,
         security_answer_2
-    ):
-        print(f"✅ User with email '{email}' created successfully — redirecting to login")
-        return RedirectResponse(url="/login", status_code=302)
-    else:
+    )
+
+    if not success:
         print(f"❌ Registration failed for email '{email}' — email might already exist")
         return templates.TemplateResponse("register.html", {
             "request": request,
-            "error": "An account with this email already exists." # Updated error message
+            # Keep the specific error message
+            "error": "An account with this email already exists."
         })
+
+    # ✅ Auto-login the user after successful registration
+    conn = None
+    cursor = None
+    try:
+        print(f"✅ User with email '{email}' created successfully. Attempting auto-login...")
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor(dictionary=True)
+        # Fetch necessary details for session (email, is_premium)
+        cursor.execute("SELECT email, is_premium FROM users WHERE email = %s", (email,))
+        user = cursor.fetchone()
+
+        if user:
+            # Set session variables - Use 'user_id' for email as used elsewhere
+            request.session["user_id"] = user["email"]
+            # Initialize is_premium in session (will be refreshed by dashboard)
+            request.session["is_premium"] = bool(user.get("is_premium", False))
+            print(f"✅ Session set for auto-login: {user['email']}, Premium: {request.session['is_premium']}")
+            # Redirect to dashboard after setting session
+            return RedirectResponse("/dashboard", status_code=302)
+        else:
+            # Should not happen if create_user succeeded, but handle defensively
+            print(f"⚠️ Auto-login failed: Could not fetch user '{email}' after creation.")
+            # Redirect to login page as a fallback
+            return RedirectResponse("/login", status_code=302)
+
+    except mysql.connector.Error as err:
+        print(f"🔥 DB Error during auto-login for {email}: {err}")
+        # Redirect to login page on DB error
+        return RedirectResponse("/login", status_code=302)
+    except Exception as e:
+        print(f"🔥 Unexpected Error during auto-login for {email}: {e}")
+        # Redirect to login page on other errors
+        return RedirectResponse("/login", status_code=302)
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
 
 # Add the new subscribe route here
 @app.get("/subscribe", response_class=HTMLResponse)
