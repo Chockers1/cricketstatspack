@@ -108,17 +108,11 @@ async def register_submit(
         print(f"✅ User '{username}' created successfully — redirecting to login")
         return RedirectResponse(url="/login", status_code=302)
     else:
-        print(f"❌ Registration failed for user '{username}' — username might already exist or invalid input")
-        # Pass back submitted values (except password) to pre-fill form on error
+        print(f"❌ Registration failed for user '{username}' — username or email might already exist")
+        # Return simpler error message as requested
         return templates.TemplateResponse("register.html", {
             "request": request,
-            "error": "Username already exists or invalid input",
-            "username": username,
-            "email": email,
-            "security_question_1": security_question_1,
-            "security_answer_1": security_answer_1, # Consider if you want to repopulate answers
-            "security_question_2": security_question_2,
-            "security_answer_2": security_answer_2  # Consider if you want to repopulate answers
+            "error": "Username or email already exists."
         })
 
 # Add the new subscribe route here
