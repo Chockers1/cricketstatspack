@@ -87,19 +87,45 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
 
     # Handle checkout.session.completed
     if event_type == 'checkout.session.completed':
-        session = data # The 'object' is the session object
+        # Add the retrieve call here to ensure line_items are expanded
+        try:
+            session = stripe.checkout.Session.retrieve(
+                data["id"], # Use the ID from the event data
+                expand=["line_items"]
+            )
+            print(f"ℹ️ [Webhook] Retrieved expanded checkout session: {session.id}")
+        except stripe.error.StripeError as e:
+            print(f"🔥 [Webhook] Stripe error retrieving expanded checkout session {data.get('id')}: {e}")
+            # If retrieval fails, we might not be able to determine the plan reliably.
+            # Raise an exception to signal a server error.
+            raise HTTPException(status_code=500, detail="Failed to retrieve expanded session details from Stripe.")
+        except Exception as e:
+             print(f"🔥 [Webhook] Unexpected error retrieving expanded checkout session {data.get('id')}: {e}")
+             raise HTTPException(status_code=500, detail="Unexpected error retrieving session details.")
+
+        # Now use the retrieved 'session' object which includes line_items
         email = session.get('customer_email')
         customer_id = session.get('customer')
-        subscription_id = session.get('subscription') # Get subscription ID
+        # subscription_id = session.get('subscription') # Keep if needed for logging
 
-        if email and customer_id and subscription_id:
-            subscription_type = None
+        # Ensure essential data is present
+        if email and customer_id:
+            subscription_type = "unknown" # Default
+            price_id = None
+
+            # --- Try extracting price_id directly from the retrieved session line_items ---
             try:
-                # Retrieve the subscription to find the price ID
-                subscription_details = stripe.Subscription.retrieve(subscription_id)
-                # Assuming the first item's price ID determines the type
-                if subscription_details.items and subscription_details.items.data:
-                    price_id = subscription_details.items.data[0].price.id
+                # Use line_items (should now be present due to expand)
+                if session.get('line_items') and session['line_items'].get('data'):
+                    price_id = session['line_items']['data'][0]['price']['id']
+                    print(f"ℹ️ [Webhook] Extracted price_id from expanded line_items: {price_id}")
+                else:
+                    # This case should be less likely now, but log it.
+                    print("⚠️ [Webhook] line_items not found in retrieved expanded session object.")
+                    # Optional: Add fallback logic here if needed, e.g., retrieving subscription
+
+                # Determine subscription type based on price_id
+                if price_id:
                     monthly_id = os.getenv("STRIPE_PRICE_ID_MONTHLY")
                     annual_id = os.getenv("STRIPE_PRICE_ID_ANNUAL")
 
@@ -108,25 +134,25 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
                     elif price_id == annual_id:
                         subscription_type = "annual"
                     else:
-                        print(f"⚠️ [Webhook] Unknown price ID {price_id} for subscription {subscription_id}")
-
-                if subscription_type:
-                     # Call updated function with all details
-                    update_subscription(email, True, customer_id, subscription_type)
+                        print(f"⚠️ [Webhook] Price ID {price_id} does not match known monthly/annual IDs.")
+                        subscription_type = "unknown" # Keep as unknown if no match
                 else:
-                    # Still activate premium even if type is unknown, but log it
-                    print(f"⚠️ [Webhook] Could not determine subscription type for {email}, activating premium without type.")
-                    update_subscription(email, True, customer_id, None) # Pass None for type
+                    print("⚠️ [Webhook] Failed to determine price_id. Subscription type remains 'unknown'.")
 
-            except stripe.error.StripeError as e:
-                print(f"🔥 [Webhook] Stripe error retrieving subscription {subscription_id}: {e}")
-                # Decide if you still want to grant premium access despite the error
-                # update_subscription(email, True, customer_id, None) # Example: Grant access anyway
+
+                # Call updated function with determined type
+                update_subscription(email, True, customer_id, subscription_type)
+
             except Exception as e:
-                 print(f"🔥 [Webhook] Unexpected error processing subscription details for {email}: {e}")
+                 # Catch errors during price_id extraction or type determination
+                 print(f"🔥 [Webhook] Error processing session data for {email}: {e}")
+                 # Decide if you still want to grant premium access despite the error
+                 print(f"⚠️ [Webhook] Granting premium access for {email} despite error, type set to 'unknown'.")
+                 update_subscription(email, True, customer_id, "unknown") # Grant access with unknown type
 
         else:
-            print(f"⚠️ checkout.session.completed event received without required data. Email: {email}, CustID: {customer_id}, SubID: {subscription_id}")
+            # Log missing essential data more clearly
+            print(f"⚠️ checkout.session.completed event received without required data after retrieve. Email: {email}, CustomerID: {customer_id}")
 
     # Handle subscription deleted or payment failed
     elif event_type in ['customer.subscription.deleted', 'invoice.payment_failed']:
