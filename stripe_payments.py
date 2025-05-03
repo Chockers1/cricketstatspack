@@ -3,7 +3,7 @@ import stripe
 import os
 from fastapi import APIRouter, Request, Query, HTTPException
 from fastapi.responses import RedirectResponse
-import mysql.connector # Add this import
+import mysql.connector # Keep import if needed elsewhere, but remove DB logic below
 
 router = APIRouter()
 
@@ -15,34 +15,15 @@ async def create_checkout_session(
     request: Request, # Keep request parameter
     plan: str = Query(...)
 ):
-    conn = None # Initialize DB connection variables
-    cursor = None
     try:
-        # Get username from session
-        username = request.session.get("user_id")
-        if not username:
-            raise HTTPException(status_code=401, detail="Not logged in") # Changed error message
+        # Get email directly from session (stored under 'user_id')
+        user_email = request.session.get("user_id")
+        if not user_email:
+            raise HTTPException(status_code=401, detail="Not logged in")
 
-        # Fetch user email from database
-        conn = mysql.connector.connect(
-            host=os.getenv("DB_HOST"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASS"),
-            database=os.getenv("DB_NAME")
-        )
-        # Use dictionary=True for easier access, though index 0 works too
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT email FROM users WHERE username = %s", (username,))
-        result = cursor.fetchone()
-
-        if not result:
-            # Raise 404 if user not found in DB
-            raise HTTPException(status_code=404, detail="User not found")
-
-        user_email = result.get("email") # Use .get for safety with dictionary cursor
-        # Basic email format check
-        if not user_email or "@" not in user_email:
-            print(f"Invalid email format found for user {username}: {user_email}")
+        # Basic email format check (already have email from session)
+        if "@" not in user_email:
+            print(f"Invalid email format found in session: {user_email}")
             raise HTTPException(status_code=400, detail="Invalid email format associated with user")
 
         # Determine Stripe Price ID
@@ -58,13 +39,13 @@ async def create_checkout_session(
              print(f"Stripe Price ID not found for plan: {plan}")
              raise HTTPException(status_code=500, detail=f"Configuration error: Price ID for plan '{plan}' not set.")
 
-        print(f"🔁 Creating Stripe checkout session for {user_email} with plan {plan} using Price ID: {price_id}") # Updated log
+        print(f"🔁 Creating Stripe checkout session for {user_email} (from session) with plan {plan} using Price ID: {price_id}") # Updated log
 
-        # Create Stripe Checkout Session using the fetched email
+        # Create Stripe Checkout Session using the email from session
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             mode="subscription",
-            customer_email=user_email, # Use the email fetched from DB
+            customer_email=user_email, # Use the email from session
             line_items=[{"price": price_id, "quantity": 1}],
             success_url="https://cricketstatspack.com/success", # Ensure these URLs are correct
             cancel_url="https://cricketstatspack.com/cancel",
@@ -91,72 +72,28 @@ async def create_checkout_session(
         # Provide a more generic error message to the client
         return {"error": f"An unexpected error occurred: {str(e)}"}
     finally:
-        # Ensure DB connection is closed
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
-            conn.close()
+        pass # No DB connection to close in this specific block anymore
 
 
 @router.get("/manage-subscription")
 async def manage_subscription(request: Request):
-    user_id = request.session.get("user_id") # user_id from session is the username
-    if not user_id:
+    # Get email directly from session (stored under 'user_id')
+    email = request.session.get("user_id")
+    if not email:
         # Redirect to login if not authenticated
         return RedirectResponse("/login")
 
-    # Get email from DB using username (user_id)
-    import mysql.connector # Import locally
-    conn = None
-    cursor = None
-    email = None
-
-    try:
-        conn = mysql.connector.connect(
-            host=os.getenv("DB_HOST"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASS"),
-            database=os.getenv("DB_NAME")
-        )
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT email FROM users WHERE username = %s", (user_id,))
-        result = cursor.fetchone()
-
-        if not result or "email" not in result:
-            # Handle case where user or email is not found in DB
-            print(f"Email not found in DB for username: {user_id}")
-            raise HTTPException(status_code=404, detail="User email not found.")
-
-        email = result["email"]
-
-    except mysql.connector.Error as err:
-        print(f"Database error fetching email for {user_id}: {err}")
-        raise HTTPException(status_code=500, detail="Database error.")
-    except Exception as e:
-        print(f"Unexpected error fetching email for {user_id}: {e}")
-        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
-    finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
-            conn.close()
-
-    # Proceed with Stripe logic only if email was found
+    # Proceed with Stripe logic using the email from session
     try:
         # Find Stripe customer by email
         customers = stripe.Customer.list(email=email, limit=1)
         if not customers.data:
-            # Handle case where customer not found in Stripe
             print(f"Stripe customer not found for email: {email}")
-            # Maybe redirect to a page explaining this? Or show an error.
-            # For now, raise an HTTPException or return an error response.
-            # Depending on desired UX, could redirect to /subscribe or /dashboard with a message.
             raise HTTPException(status_code=404, detail="Stripe customer not found for this email.")
 
         customer_id = customers.data[0].id
 
         # Create a billing portal session
-        # Ensure the return URL is appropriate, e.g., back to the dashboard
         return_url = os.getenv("STRIPE_PORTAL_RETURN_URL", "https://cricketstatspack.com/dashboard")
         portal_session = stripe.billing_portal.Session.create(
             customer=customer_id,
@@ -164,7 +101,7 @@ async def manage_subscription(request: Request):
         )
 
         # Redirect to Stripe Billing Portal
-        return RedirectResponse(portal_session.url, status_code=303) # Use 303 for POST-redirect-GET pattern
+        return RedirectResponse(portal_session.url, status_code=303)
 
     except stripe.error.StripeError as e:
         print(f"Stripe error creating portal session for {email}: {e}")
