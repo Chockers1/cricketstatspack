@@ -1,0 +1,52 @@
+{% extends "base.html" %} {# Or use a different base if you have one for admin #}
+
+{% block title %}Admin Dashboard{% endblock %}
+
+{% block content %}
+<h2>Admin Dashboard</h2>
+
+{# Display Stats Cards/Section #}
+<h3>Statistics</h3>
+<div>
+    <p><strong>Total Users:</strong> {{ stats.total_users }}</p>
+    <p><strong>Premium Users:</strong> {{ stats.premium_users }}</p>
+    <p><strong>Users Missing Stripe ID:</strong> {{ stats.missing_stripe_id }}</p>
+    {# Add other stats if needed #}
+</div>
+<hr>
+
+{# Display User Table #}
+<h3>User Details</h3>
+<table border="1" style="width:100%; border-collapse: collapse;">
+    <thead>
+        <tr>
+            <th>Email</th>
+            <th>Registered On</th>
+            <th>Premium?</th>
+            <th>Stripe Customer ID</th>
+            <th>Reset Attempts</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% if users %}
+            {% for user in users %}
+            <tr>
+                <td>{{ user.email }}</td>
+                <td>{{ user.created_at_formatted or user.created_at or 'N/A' }}</td> {# Display formatted or raw date #}
+                <td>{{ 'Yes' if user.is_premium else 'No' }}</td>
+                <td>{{ user.stripe_customer_id or 'None' }}</td>
+                <td>{{ user.reset_attempts }}</td>
+            </tr>
+            {% endfor %}
+        {% else %}
+            <tr>
+                <td colspan="5">No user data available or error fetching data.</td>
+            </tr>
+        {% endif %}
+    </tbody>
+</table>
+
+{# Optional: Link back to main dashboard or logout #}
+<p><a href="/dashboard">Back to User Dashboard</a> | <a href="/logout">Logout</a></p>
+
+{% endblock %}

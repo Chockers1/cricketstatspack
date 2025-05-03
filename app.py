@@ -13,7 +13,8 @@ import mysql.connector
 import bcrypt # Ensure bcrypt is imported
 from typing import Optional # Import Optional for optional form fields
 
-from auth_utils import verify_user, create_user
+# Import the new admin function
+from auth_utils import verify_user, create_user, get_admin_stats
 from stripe_payments import router as stripe_payments_router # Add this import
 from stripe_webhook import router as stripe_webhook_router # Add this import
 
@@ -519,4 +520,29 @@ async def change_password_submit(
 #     })
 
 # --- End Forgot Username Routes ---
+
+
+# --- Admin Dashboard Route ---
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_dashboard(request: Request):
+    # Check session for user_id (which holds the email)
+    user_email = request.session.get("user_id")
+    # Simple check against a hardcoded admin email
+    if user_email != "r.taylor289@gmail.com":
+        print(f"🚨 Unauthorized access attempt to /admin by: {user_email or 'Not logged in'}")
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    print(f"✅ Admin access granted to: {user_email}")
+    # Fetch stats and user data
+    stats, users = get_admin_stats()
+
+    # Render the admin template
+    return templates.TemplateResponse("admin_dashboard.html", {
+        "request": request,
+        "stats": stats,
+        "users": users
+    })
+
+# --- End Admin Dashboard Route ---
 

@@ -185,3 +185,73 @@ def create_user(email: str, password: str, q1: str, a1: str, q2: str, a2: str) -
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
+
+# --- Admin Functions ---
+
+def get_admin_stats():
+    """Fetches statistics and user details for the admin dashboard."""
+    stats = {
+        "total_users": 0,
+        "premium_users": 0,
+        "missing_stripe_id": 0,
+        # Assuming reset count is sum of reset_attempts, not a separate table
+    }
+    users = []
+    conn = None
+    cursor = None
+
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor(dictionary=True)
+
+        # Get counts
+        cursor.execute("SELECT COUNT(*) as count FROM users")
+        result = cursor.fetchone()
+        if result: stats["total_users"] = result["count"]
+
+        cursor.execute("SELECT COUNT(*) as count FROM users WHERE is_premium = 1")
+        result = cursor.fetchone()
+        if result: stats["premium_users"] = result["count"]
+
+        cursor.execute("SELECT COUNT(*) as count FROM users WHERE stripe_customer_id IS NULL OR stripe_customer_id = ''")
+        result = cursor.fetchone()
+        if result: stats["missing_stripe_id"] = result["count"]
+
+        # Get user details
+        cursor.execute("""
+            SELECT email, created_at, is_premium, stripe_customer_id, reset_attempts
+            FROM users
+            ORDER BY created_at DESC
+        """)
+        users = cursor.fetchall()
+
+        # Format created_at for better display if needed (optional)
+        for user in users:
+            if user.get('created_at'):
+                 # Example formatting, adjust as desired
+                 user['created_at_formatted'] = user['created_at'].strftime('%Y-%m-%d %H:%M')
+
+
+    except mysql.connector.Error as err:
+        print(f"🔥 Admin Stats DB Error: {err}")
+        # Return empty/default stats on error
+        stats = {k: 'Error' for k in stats}
+        users = []
+    except Exception as e:
+        print(f"🔥 Admin Stats Unexpected Error: {e}")
+        stats = {k: 'Error' for k in stats} # Ensure stats is assigned in this case too
+        users = [] # Ensure users is assigned in this case too
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+    return stats, users
+
+# --- End Admin Functions ---
