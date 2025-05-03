@@ -194,6 +194,8 @@ def get_admin_stats():
         "total_users": 0,
         "premium_users": 0,
         "missing_stripe_id": 0,
+        "monthly_subs": 0, # Add new keys
+        "annual_subs": 0,  # Add new keys
         # Assuming reset count is sum of reset_attempts, not a separate table
     }
     users = []
@@ -221,6 +223,15 @@ def get_admin_stats():
         cursor.execute("SELECT COUNT(*) as count FROM users WHERE stripe_customer_id IS NULL OR stripe_customer_id = ''")
         result = cursor.fetchone()
         if result: stats["missing_stripe_id"] = result["count"]
+
+        # Add subscription type counts
+        cursor.execute("SELECT COUNT(*) as count FROM users WHERE subscription_type = 'monthly'")
+        result = cursor.fetchone()
+        if result: stats["monthly_subs"] = result["count"]
+
+        cursor.execute("SELECT COUNT(*) as count FROM users WHERE subscription_type = 'annual'")
+        result = cursor.fetchone()
+        if result: stats["annual_subs"] = result["count"]
 
         # Get user details
         cursor.execute("""

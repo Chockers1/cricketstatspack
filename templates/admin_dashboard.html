@@ -72,9 +72,9 @@
       {# Adjust variable names to match what's passed from app.py #}
       <div><strong>Total Users:</strong> {{ stats.total_users }}</div>
       <div><strong>Premium Users:</strong> {{ stats.premium_users }}</div>
-      {# Add Monthly/Annual if available in stats dict #}
-      {# <div><strong>Monthly Subscribers:</strong> {{ stats.monthly_subs }}</div> #}
-      {# <div><strong>Annual Subscribers:</strong> {{ stats.annual_subs }}</div> #}
+      {# Add Monthly/Annual counts #}
+      <div><strong>Monthly Subscribers:</strong> {{ stats.monthly_subs }}</div>
+      <div><strong>Annual Subscribers:</strong> {{ stats.annual_subs }}</div>
       <div><strong>Missing Stripe IDs:</strong> {{ stats.missing_stripe_id }}</div> {# Corrected variable name #}
       {# Add Reset Requests if available in stats dict #}
       {# <div><strong>Password Reset Requests:</strong> {{ stats.total_reset_requests }}</div> #}
