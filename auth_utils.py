@@ -19,7 +19,8 @@ SECURITY_QUESTIONS = [
     "What is your favorite book?",
 ]
 
-def verify_user(username: str, password: str) -> bool:
+# Updated function signature to use email
+def verify_user(email: str, password: str) -> bool:
     try:
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"),
@@ -29,35 +30,39 @@ def verify_user(username: str, password: str) -> bool:
         )
 
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+        # Updated query to use email
+        cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
         user = cursor.fetchone()
-        print("🔎 User from DB:", user)
+        print("🔎 User from DB (by email):", user) # Updated print statement
 
         cursor.close()
         conn.close()
 
         if not user:
-            print("❌ No user found with that username")
+            # Updated print statement
+            print(f"❌ No user found with email: {email}")
             return False
 
         stored_hash = user['password_hash']
-        print(f"🔐 Entered password (raw): {password}")
+        # Keep password logging as is, or update context if desired
+        print(f"🔐 Entered password (raw) for email {email}: {password}")
         print(f"🔐 Stored hash: {stored_hash}")
-        print("🔐 bcrypt.checkpw result:", bcrypt.checkpw(password.encode(), stored_hash.encode()))
+        print("🔐 bcrypt.checkpw result:", bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8'))) # Ensure encoding
 
-        if bcrypt.checkpw(password.encode(), stored_hash.encode()):
-            print("✅ Password verified")
+        if bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8')): # Ensure encoding
+            print(f"✅ Password verified for email: {email}") # Updated print statement
             return True
 
-        print("❌ bcrypt check failed")
+        print(f"❌ bcrypt check failed for email: {email}") # Updated print statement
         return False
 
     except Exception as e:
-        print("🔥 Login error:", e)
+        # Updated print statement
+        print(f"🔥 Login error for email {email}: {e}")
         return False
 
-# Updated function signature to include security questions and answers
-def create_user(username: str, email: str, password: str, q1: str, a1: str, q2: str, a2: str) -> bool:
+# Updated function signature to remove username
+def create_user(email: str, password: str, q1: str, a1: str, q2: str, a2: str) -> bool:
     conn = None
     cursor = None
     try:
@@ -67,16 +72,13 @@ def create_user(username: str, email: str, password: str, q1: str, a1: str, q2: 
             password=os.getenv("DB_PASS"),
             database=os.getenv("DB_NAME")
         )
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True) # Use dictionary cursor for fetchone
 
-        # Check if username or email already exists
-        cursor.execute("SELECT username, email FROM users WHERE username = %s OR email = %s", (username, email))
+        # Check if email already exists
+        cursor.execute("SELECT email FROM users WHERE email = %s", (email,))
         existing_user = cursor.fetchone()
         if existing_user:
-            if existing_user[0] == username:
-                print(f"Username '{username}' already exists.")
-            if existing_user[1] == email:
-                 print(f"Email '{email}' already exists.")
+            print(f"Email '{email}' already exists.")
             return False  # Already exists
 
         # Hash the password
@@ -85,34 +87,37 @@ def create_user(username: str, email: str, password: str, q1: str, a1: str, q2: 
         hashed_a1 = bcrypt.hashpw(a1.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         hashed_a2 = bcrypt.hashpw(a2.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-        # Insert new user with security questions and hashed answers
+        # Insert new user - removed username column
+        # Assuming 'username' column is removed or allows NULL if kept for other reasons.
+        # If 'username' MUST be unique and non-null, you might need to generate one or use email.
+        # For now, assuming it's removed from the INSERT. Adjust if schema differs.
         query = """
             INSERT INTO users (
-                username, password_hash, email, is_premium,
+                password_hash, email, is_premium,
                 security_question_1, security_answer_1_hash,
                 security_question_2, security_answer_2_hash,
-                reset_attempts  -- Initialize reset_attempts
+                reset_attempts
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """
+        # Execute without username
         cursor.execute(
             query,
             (
-                username, hashed_pw, email, 0, # Set is_premium to 0
+                hashed_pw, email, 0, # Set is_premium to 0
                 q1, hashed_a1, q2, hashed_a2,
                 0 # Initialize reset_attempts to 0
             )
         )
         conn.commit()
-        print(f"User '{username}' created successfully with security questions.")
-        # print("✅ Hashed password stored:", hashed_pw) # Optional debug line
+        print(f"User with email '{email}' created successfully with security questions.")
         return True
 
     except mysql.connector.Error as err:
-        print(f"⚠️ Error in create_user: {err}") # Updated error message
+        print(f"⚠️ Error in create_user: {err}")
         return False
     except Exception as e:
-        print(f"⚠️ Error in create_user: {e}") # Updated error message
+        print(f"⚠️ Error in create_user: {e}")
         return False
     finally:
         if cursor:

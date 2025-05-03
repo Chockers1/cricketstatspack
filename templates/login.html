@@ -11,13 +11,12 @@
     {% endif %}
 
     <form method="post" action="/login">
-        <label>Username:</label><br>
-        <input type="text" name="username" required><br>
+        <label>Email:</label><br> {# Changed label from Username #}
+        <input type="email" name="email" required><br> {# Changed name from username, type to email #}
         <label>Password:</label><br>
         <input type="password" name="password" required><br><br>
         <input type="submit" value="Login">
         <p><a href="/verify-security">Forgot your password?</a></p>
-        <p><a href="/forgot-username">Forgot your username?</a></p>
     </form>
 
 </body>

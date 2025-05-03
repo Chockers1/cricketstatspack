@@ -5,8 +5,8 @@
 {% block content %}
 <h2>Welcome to the Cricket Stats Pack Dashboard</h2>
 
-{% if request.session.get('user_id') %}
-    <p>Welcome, {{ request.session.get('user_id') }}</p>
+{% if request.session.get('user_id') %} {# user_id now holds email #}
+    <p>Welcome, {{ request.session.get('user_id') }}</p> {# Display email #}
 
     {# This assumes 'is_premium' is stored in the session #}
     {% if request.session.get('is_premium') %}

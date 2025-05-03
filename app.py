@@ -60,35 +60,31 @@ async def root(request: Request):
 async def login_form(request: Request):
     return templates.TemplateResponse("login.html", {"request": request, "error": None})
 
-# ✅ Single, correct POST route for login (Updated for session)
+# ✅ Single, correct POST route for login (Updated for session and email)
 @app.post("/login")
-async def login_submit(request: Request, username: str = Form(...), password: str = Form(...)):
+async def login_submit(request: Request, email: str = Form(...), password: str = Form(...)): # Changed username to email
     print("🚨 Login POST received")
-    # Assuming verify_user returns True on success, or maybe user info
-    # For now, let's assume it returns True and we store username in session
-    # The parameters 'username' and 'password' match the HTML form names.
-    # The 'password' variable is passed directly to verify_user without modification here.
-    if verify_user(username, password):
-        print("✅ Login success — redirecting to dashboard")
-        # Store user identifier in session
-        request.session["user_id"] = username # Store username as user_id
+    # Use email for verification
+    if verify_user(email, password):
+        print(f"✅ Login success for {email} — redirecting to dashboard")
+        # Store email identifier in session
+        request.session["user_id"] = email # Store email as user_id
         response = RedirectResponse(url="/dashboard", status_code=302)
-        # response.set_cookie(key="logged_in", value="yes", httponly=True) # Remove cookie setting
         return response
     else:
-        print("❌ Login failed — invalid username/password")
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid login"})
+        print(f"❌ Login failed — invalid email/password for {email}")
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid login"}) # Keep generic error
 
 # Registration page
 @app.get("/register", response_class=HTMLResponse)
 async def register_form(request: Request):
     return templates.TemplateResponse("register.html", {"request": request, "error": None})
 
-# Registration submission
+# Registration submission (Updated in previous step)
 @app.post("/register")
 async def register_submit(
     request: Request,
-    username: str = Form(...),
+    # username removed
     email: str = Form(...),
     password: str = Form(...),
     security_question_1: str = Form(...),
@@ -96,9 +92,9 @@ async def register_submit(
     security_question_2: str = Form(...),
     security_answer_2: str = Form(...)
 ):
-    # Pass all fields including security questions/answers to create_user
+    # Pass all fields including security questions/answers to create_user, excluding username
     if create_user(
-        username,
+        # username removed
         email,
         password,
         security_question_1,
@@ -106,14 +102,13 @@ async def register_submit(
         security_question_2,
         security_answer_2
     ):
-        print(f"✅ User '{username}' created successfully — redirecting to login")
+        print(f"✅ User with email '{email}' created successfully — redirecting to login")
         return RedirectResponse(url="/login", status_code=302)
     else:
-        print(f"❌ Registration failed for user '{username}' — username or email might already exist")
-        # Return simpler error message as requested
+        print(f"❌ Registration failed for email '{email}' — email might already exist")
         return templates.TemplateResponse("register.html", {
             "request": request,
-            "error": "Username or email already exists."
+            "error": "Email already exists."
         })
 
 # Add the new subscribe route here
@@ -124,15 +119,15 @@ async def subscribe_page(request: Request):
     return templates.TemplateResponse("subscribe.html", {"request": request})
 
 
-# Updated dashboard route to always check DB and update session
+# Updated dashboard route to always check DB and update session using email
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    if not request.session.get("user_id"):
+    if not request.session.get("user_id"): # user_id now stores email
         return RedirectResponse("/login")
 
-    username = request.session["user_id"]
+    email = request.session["user_id"] # Get email from session
 
-    # 🔄 ALWAYS check DB for latest premium status
+    # 🔄 ALWAYS check DB for latest premium status using email
     import mysql.connector # Import locally as requested
     conn = None
     cursor = None
@@ -146,7 +141,8 @@ async def dashboard(request: Request):
             database=os.getenv("DB_NAME")
         )
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT is_premium FROM users WHERE username = %s", (username,))
+        # Query by email
+        cursor.execute("SELECT is_premium FROM users WHERE email = %s", (email,))
         user = cursor.fetchone()
 
         if user:
@@ -154,15 +150,14 @@ async def dashboard(request: Request):
             request.session["is_premium"] = bool(user.get("is_premium"))
         else:
             # If user somehow not found in DB (though they are logged in), set premium to False
-            print(f"⚠️ User {username} found in session but not in DB during dashboard load.")
+            print(f"⚠️ User with email {email} found in session but not in DB during dashboard load.")
             request.session["is_premium"] = False
 
     except mysql.connector.Error as err: # Catch specific DB errors
-        print(f"🔥 Dashboard DB check failed for {username}: {err}")
-        # Keep existing session value or default to False if error occurs
+        print(f"🔥 Dashboard DB check failed for {email}: {err}")
         request.session["is_premium"] = request.session.get("is_premium", False)
     except Exception as e: # Catch other potential errors
-        print(f"🔥 Dashboard DB check failed unexpectedly for {username}: {e}")
+        print(f"🔥 Dashboard DB check failed unexpectedly for {email}: {e}")
         request.session["is_premium"] = request.session.get("is_premium", False)
     finally:
         if cursor:
@@ -192,25 +187,24 @@ async def success_page(request: Request):
 # The entire /forgot-password GET and POST routes are removed.
 # --- End Remove Forgot Password Routes ---
 
-# --- Security Question Verification Routes (Updated for Two-Step) ---
+# --- Security Question Verification Routes (Updated for Two-Step and Email) ---
 
 @app.get("/verify-security", response_class=HTMLResponse)
 async def verify_security_form(request: Request):
-    # Renders the initial form asking for username only
-    # Pass questions=None initially
+    # Renders the initial form asking for email only
     return templates.TemplateResponse("verify_security.html", {
         "request": request,
         "questions": None,
         "error": None,
-        "username": None # Ensure username is None initially
+        "email": None # Changed from username
     })
 
-@app.post("/verify-security") # Removed response_class=HTMLResponse, uses Redirect or TemplateResponse
+@app.post("/verify-security")
 async def verify_security_submit(
     request: Request,
-    username: str = Form(...),
-    answer1: Optional[str] = Form(None), # Make answers optional
-    answer2: Optional[str] = Form(None)  # Make answers optional
+    email: str = Form(...), # Changed username to email
+    answer1: Optional[str] = Form(None),
+    answer2: Optional[str] = Form(None)
 ):
     conn = None
     cursor = None
@@ -223,33 +217,33 @@ async def verify_security_submit(
         )
         cursor = conn.cursor(dictionary=True)
 
-        # Fetch user data including questions and hashes
+        # Fetch user data using email
         cursor.execute(
             "SELECT id, security_question_1, security_answer_1_hash, "
             "security_question_2, security_answer_2_hash, reset_attempts "
-            "FROM users WHERE username = %s", (username,)
+            "FROM users WHERE email = %s", (email,) # Query by email
         )
         user = cursor.fetchone()
 
         # Generic error for user not found or missing questions/hashes later
-        generic_error = "Invalid username or answers." # Keep generic error
+        generic_error = "Invalid email or answers." # Updated generic error
 
         if not user:
-            print(f"Security verification step 1 failed: User not found - {username}")
+            print(f"Security verification step 1 failed: User not found - {email}")
             return templates.TemplateResponse("verify_security.html", {
                 "request": request,
                 "questions": None,
-                "username": username, # Pass username back
-                "error": "User not found." # Specific error for step 1 failure
+                "email": email, # Pass email back
+                "error": "User not found."
             }, status_code=404)
 
         # Check reset attempts *before* proceeding
         if user.get('reset_attempts', 0) >= 3:
-            print(f"Security verification blocked for user {username} due to too many attempts.")
+            print(f"Security verification blocked for user {email} due to too many attempts.")
             return templates.TemplateResponse("verify_security.html", {
                 "request": request,
-                "questions": None, # Don't show questions if blocked
-                "username": username,
+                "questions": None,
+                "email": email,
                 "error": "Too many failed attempts. Please contact support."
             }, status_code=403)
 
@@ -260,24 +254,23 @@ async def verify_security_submit(
         sa2_hash = user.get('security_answer_2_hash')
 
         if not q1 or not sa1_hash or not q2 or not sa2_hash:
-            print(f"Security questions/hashes missing for user {username}.")
-            # Don't increment attempts here, just prevent proceeding
+            print(f"Security questions/hashes missing for user {email}.")
             return templates.TemplateResponse("verify_security.html", {
                 "request": request,
                 "questions": None,
-                "username": username,
+                "email": email,
                 "error": "Security questions not set up for this account. Please contact support."
             }, status_code=400)
 
         # --- Logic based on whether answers were submitted ---
 
         if answer1 is None or answer2 is None:
-            # Step 1 completed (username submitted), now show questions
-            print(f"Security verification step 1 successful for {username}. Showing questions.")
+            # Step 1 completed (email submitted), now show questions
+            print(f"Security verification step 1 successful for {email}. Showing questions.")
             return templates.TemplateResponse("verify_security.html", {
                 "request": request,
-                "questions": [q1, q2], # Pass the actual questions
-                "username": username, # Pass username to keep it in the form (readonly)
+                "questions": [q1, q2],
+                "email": email, # Pass email to keep it in the form (readonly)
                 "error": None
             })
         else:
@@ -286,151 +279,120 @@ async def verify_security_submit(
             correct2 = bcrypt.checkpw(answer2.encode('utf-8'), sa2_hash.encode('utf-8'))
 
             if correct1 and correct2:
-                print(f"Security verification step 2 successful for user: {username}")
-                # Reset attempt count on success
+                print(f"Security verification step 2 successful for user: {email}")
                 cursor.execute("UPDATE users SET reset_attempts = 0 WHERE id = %s", (user['id'],))
                 conn.commit()
 
-                # Store username in session for the reset step
-                request.session['reset_user'] = username # Use existing key 'reset_user'
+                # Store email in session for the reset step
+                request.session['reset_user'] = email # Store email
                 return RedirectResponse("/reset-password", status_code=302)
             else:
-                print(f"Security verification step 2 failed for user: {username}")
-                # Increment attempt count on failure
+                print(f"Security verification step 2 failed for user: {email}")
                 cursor.execute("UPDATE users SET reset_attempts = reset_attempts + 1 WHERE id = %s", (user['id'],))
                 conn.commit()
-                # Re-render the form with questions and error message
                 return templates.TemplateResponse("verify_security.html", {
                     "request": request,
-                    "questions": [q1, q2], # Show questions again
-                    "username": username,
-                    "error": "Incorrect answers. Please try again." # Specific error for step 2 failure
+                    "questions": [q1, q2],
+                    "email": email,
+                    "error": "Incorrect answers. Please try again."
                 }, status_code=400)
 
     except mysql.connector.Error as err:
-        print(f"Database error during security verification for {username}: {err}")
-        # Determine if questions should be shown based on whether answers were submitted
+        print(f"Database error during security verification for {email}: {err}")
         show_questions = [user.get('security_question_1'), user.get('security_question_2')] if user and answer1 is not None else None
         return templates.TemplateResponse("verify_security.html", {
-            "request": request,
-            "questions": show_questions,
-            "username": username,
-            "error": "A database error occurred."
+            "request": request, "questions": show_questions, "email": email, "error": "A database error occurred."
         }, status_code=500)
     except Exception as e:
-        print(f"Unexpected error during security verification for {username}: {e}")
+        print(f"Unexpected error during security verification for {email}: {e}")
         show_questions = [user.get('security_question_1'), user.get('security_question_2')] if user and answer1 is not None else None
         return templates.TemplateResponse("verify_security.html", {
-            "request": request,
-            "questions": show_questions,
-            "username": username,
-            "error": "An unexpected error occurred."
+            "request": request, "questions": show_questions, "email": email, "error": "An unexpected error occurred."
         }, status_code=500)
     finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
-            conn.close()
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
 
 # --- End Security Question Verification Routes ---
 
 
-# --- Form-Based Reset Password Routes (Updated for Session Verification) ---
+# --- Form-Based Reset Password Routes (Updated for Session Verification and Email) ---
 
 # GET /reset-password
 @app.get("/reset-password", response_class=HTMLResponse)
 async def reset_password_form(request: Request):
-    # Check if user has passed security verification via session
-    if 'reset_user' not in request.session:
-        print("Access denied to /reset-password GET: No 'reset_user' in session.")
-        # Redirect to the start of the process if session key is missing
-        return RedirectResponse("/verify-security", status_code=303) # Use 303 See Other
+    # Check if user email has passed security verification via session
+    if 'reset_user' not in request.session: # reset_user now stores email
+        print("Access denied to /reset-password GET: No 'reset_user' (email) in session.")
+        return RedirectResponse("/verify-security", status_code=303)
 
-    # User is verified, render the reset form
     return templates.TemplateResponse("reset_password.html", {"request": request, "error": None})
 
 # POST /reset-password
-@app.post("/reset-password") # Removed response_class=HTMLResponse, uses RedirectResponse
+@app.post("/reset-password")
 async def reset_password_submit(request: Request, new_password: str = Form(...), confirm_password: str = Form(...)):
     # Double-check session key existence on POST
     if 'reset_user' not in request.session:
-        print("Access denied to /reset-password POST: No 'reset_user' in session.")
+        print("Access denied to /reset-password POST: No 'reset_user' (email) in session.")
         return RedirectResponse("/verify-security", status_code=303)
 
-    username = request.session['reset_user'] # Get username from session
+    email = request.session['reset_user'] # Get email from session
 
     # 1. Check if passwords match
     if new_password != confirm_password:
-        print(f"Password mismatch for user {username} during reset attempt.")
-        # Note: We don't pass username back to template anymore
+        print(f"Password mismatch for user {email} during reset attempt.")
         return templates.TemplateResponse("reset_password.html", {
-            "request": request,
-            "error": "Passwords do not match."
+            "request": request, "error": "Passwords do not match."
         }, status_code=400)
 
-    # Optional: Basic password validation (e.g., minimum length)
-    if len(new_password) < 8: # Example: Minimum length check
-         print(f"Password too short for user {username} during reset attempt.")
+    # Optional: Basic password validation
+    if len(new_password) < 8:
+         print(f"Password too short for user {email} during reset attempt.")
          return templates.TemplateResponse("reset_password.html", {
-             "request": request,
-             "error": "Password must be at least 8 characters long."
+             "request": request, "error": "Password must be at least 8 characters long."
          }, status_code=400)
 
     conn = None
     cursor = None
     try:
         conn = mysql.connector.connect(
-            host=os.getenv("DB_HOST"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASS"),
-            database=os.getenv("DB_NAME")
+            host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"), password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
         )
         cursor = conn.cursor()
 
         # 2. Hash the new password
         hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-        # 3. Update password_hash in the database using username from session
-        # Ensure your password column is named 'password_hash'
-        update_query = "UPDATE users SET password_hash = %s WHERE username = %s"
-        cursor.execute(update_query, (hashed_pw, username))
+        # 3. Update password_hash in the database using email from session
+        update_query = "UPDATE users SET password_hash = %s WHERE email = %s" # Update by email
+        cursor.execute(update_query, (hashed_pw, email))
         conn.commit()
 
         # Check if the update was successful
         if cursor.rowcount == 1:
-            print(f"Password successfully reset for username: {username}")
-            # 4. Clear the session key and redirect to the new success page
-            request.session.pop('reset_user', None) # Safely remove the key
-            return RedirectResponse("/reset-password-success", status_code=302) # Updated redirect
+            print(f"Password successfully reset for email: {email}")
+            request.session.pop('reset_user', None)
+            return RedirectResponse("/reset-password-success", status_code=302)
         else:
-            # This might happen if the user was deleted between verification and reset
-            print(f"Password reset failed for username: {username}. User might no longer exist.")
-            # Clear the potentially stale session key
+            print(f"Password reset failed for email: {email}. User might no longer exist.")
             request.session.pop('reset_user', None)
             return templates.TemplateResponse("reset_password.html", {
-                "request": request,
-                "error": "Could not update password. User may not exist.",
-            }, status_code=404) # User not found during update
+                "request": request, "error": "Could not update password. User may not exist.",
+            }, status_code=404)
 
     except mysql.connector.Error as err:
-        print(f"Database error during password reset for username {username}: {err}")
-        # Don't clear session key on DB error, user might retry
+        print(f"Database error during password reset for email {email}: {err}")
         return templates.TemplateResponse("reset_password.html", {
-            "request": request,
-            "error": "A database error occurred. Please try again.",
+            "request": request, "error": "A database error occurred. Please try again.",
         }, status_code=500)
     except Exception as e:
-        print(f"Unexpected error during password reset for username {username}: {e}")
-        # Don't clear session key on unexpected error
+        print(f"Unexpected error during password reset for email {email}: {e}")
         return templates.TemplateResponse("reset_password.html", {
-            "request": request,
-            "error": "An unexpected error occurred. Please try again.",
+            "request": request, "error": "An unexpected error occurred. Please try again.",
         }, status_code=500)
     finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
-            conn.close()
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
 
 # --- End Reset Password Routes ---
 
@@ -444,18 +406,18 @@ async def reset_password_success(request: Request):
 # --- End Reset Password Success Route ---
 
 
-# --- Change Password Routes ---
+# --- Change Password Routes (Updated for Email) ---
 
 @app.get("/change-password", response_class=HTMLResponse)
 async def change_password_form(request: Request):
-    # Check if user is logged in
+    # Check if user is logged in (session user_id is email)
     if not request.session.get("user_id"):
         return RedirectResponse("/login", status_code=303)
     # Render the change password form
     return templates.TemplateResponse("change_password.html", {"request": request, "error": None, "success": None})
 
 
-@app.post("/change-password") # Removed response_class=HTMLResponse, uses Redirect or TemplateResponse
+@app.post("/change-password")
 async def change_password_submit(
     request: Request,
     current_password: str = Form(...),
@@ -463,45 +425,37 @@ async def change_password_submit(
     confirm_password: str = Form(...)
 ):
     # Check if user is logged in
-    if not request.session.get("user_id"):
+    if not request.session.get("user_id"): # user_id is email
         return RedirectResponse("/login", status_code=303)
 
-    username = request.session["user_id"]
+    email = request.session["user_id"] # Get email from session
 
-    # 1. Verify current password using auth_utils.verify_user
-    if not verify_user(username, current_password):
-        print(f"Change password failed for {username}: Incorrect current password.")
+    # 1. Verify current password using email
+    if not verify_user(email, current_password):
+        print(f"Change password failed for {email}: Incorrect current password.")
         return templates.TemplateResponse("change_password.html", {
-            "request": request,
-            "error": "Current password is incorrect.",
-            "success": None
+            "request": request, "error": "Current password is incorrect.", "success": None
         }, status_code=400)
 
     # 2. Check if new passwords match
     if new_password != confirm_password:
-        print(f"Change password failed for {username}: New passwords do not match.")
+        print(f"Change password failed for {email}: New passwords do not match.")
         return templates.TemplateResponse("change_password.html", {
-            "request": request,
-            "error": "New passwords do not match.",
-            "success": None
+            "request": request, "error": "New passwords do not match.", "success": None
         }, status_code=400)
 
-    # 3. Optional: Basic password validation (e.g., minimum length)
-    if len(new_password) < 8: # Example: Minimum length check
-         print(f"Change password failed for {username}: New password too short.")
+    # 3. Optional: Basic password validation
+    if len(new_password) < 8:
+         print(f"Change password failed for {email}: New password too short.")
          return templates.TemplateResponse("change_password.html", {
-             "request": request,
-             "error": "New password must be at least 8 characters long.",
-             "success": None
+             "request": request, "error": "New password must be at least 8 characters long.", "success": None
          }, status_code=400)
 
     # 4. Optional: Check if new password is the same as the old one
     if current_password == new_password:
-        print(f"Change password failed for {username}: New password is the same as the current one.")
+        print(f"Change password failed for {email}: New password is the same as the current one.")
         return templates.TemplateResponse("change_password.html", {
-            "request": request,
-            "error": "New password cannot be the same as the current password.",
-            "success": None
+            "request": request, "error": "New password cannot be the same as the current password.", "success": None
         }, status_code=400)
 
 
@@ -509,111 +463,60 @@ async def change_password_submit(
     cursor = None
     try:
         conn = mysql.connector.connect(
-            host=os.getenv("DB_HOST"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASS"),
-            database=os.getenv("DB_NAME")
+            host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"), password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
         )
         cursor = conn.cursor()
 
         # 5. Hash the new password
         hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-        # 6. Update password_hash in the database
-        update_query = "UPDATE users SET password_hash = %s WHERE username = %s"
-        cursor.execute(update_query, (hashed_pw, username))
+        # 6. Update password_hash in the database using email
+        update_query = "UPDATE users SET password_hash = %s WHERE email = %s" # Update by email
+        cursor.execute(update_query, (hashed_pw, email))
         conn.commit()
 
         # Check if the update was successful
         if cursor.rowcount == 1:
-            print(f"Password successfully changed for username: {username}")
-            # Render the same page with a success message
+            print(f"Password successfully changed for email: {email}")
             return templates.TemplateResponse("change_password.html", {
-                "request": request,
-                "error": None,
-                "success": "Password changed successfully!"
+                "request": request, "error": None, "success": "Password changed successfully!"
             })
-            # Or redirect to dashboard: return RedirectResponse("/dashboard?message=Password+changed+successfully", status_code=302)
         else:
-            # This case should ideally not happen if the user is logged in
-            print(f"Password change failed unexpectedly for username: {username} after verification.")
+            print(f"Password change failed unexpectedly for email: {email} after verification.")
             return templates.TemplateResponse("change_password.html", {
-                "request": request,
-                "error": "An unexpected error occurred during password update.",
-                "success": None
+                "request": request, "error": "An unexpected error occurred during password update.", "success": None
             }, status_code=500)
 
     except mysql.connector.Error as err:
-        print(f"Database error during password change for username {username}: {err}")
+        print(f"Database error during password change for email {email}: {err}")
         return templates.TemplateResponse("change_password.html", {
-            "request": request,
-            "error": "A database error occurred. Please try again.",
-            "success": None
+            "request": request, "error": "A database error occurred. Please try again.", "success": None
         }, status_code=500)
     except Exception as e:
-        print(f"Unexpected error during password change for username {username}: {e}")
+        print(f"Unexpected error during password change for email {email}: {e}")
         return templates.TemplateResponse("change_password.html", {
-            "request": request,
-            "error": "An unexpected error occurred. Please try again.",
-            "success": None
+            "request": request, "error": "An unexpected error occurred. Please try again.", "success": None
         }, status_code=500)
     finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
-            conn.close()
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
 
 # --- End Change Password Routes ---
 
-# --- Forgot Username Routes ---
+# --- REMOVE Forgot Username Routes ---
 
-@app.get("/forgot-username", response_class=HTMLResponse)
-async def forgot_username_form(request: Request):
-    # Renders the form asking for the user's email
-    return templates.TemplateResponse("forgot_username.html", {"request": request})
-
-
-@app.post("/forgot-username") # Removed response_class=HTMLResponse, uses TemplateResponse
-async def forgot_username_submit(request: Request, email: str = Form(...)):
-    conn = None
-    cursor = None
-    username_found = None # Variable to store username if found
-
-    try:
-        conn = mysql.connector.connect(
-            host=os.getenv("DB_HOST"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASS"),
-            database=os.getenv("DB_NAME")
-        )
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT username FROM users WHERE email = %s", (email,))
-        result = cursor.fetchone()
-
-        if result:
-            username_found = result['username']
-            # Log internally or send email here if desired
-            print(f"Username recovery requested for email {email}. Username: {username_found}")
-            # TODO: Implement email sending logic if required
-            # send_username_email(email, username_found)
-
-    except mysql.connector.Error as err:
-        print(f"Database error during username lookup for email {email}: {err}")
-        # Proceed to show generic message even on DB error to avoid information leak
-    except Exception as e:
-        print(f"Unexpected error during username lookup for email {email}: {e}")
-        # Proceed to show generic message
-    finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
-            conn.close()
-
-    # Always render the result page with a generic message, regardless of whether the email was found or if an error occurred.
-    # Do NOT pass the actual username to the template.
-    return templates.TemplateResponse("forgot_username_result.html", {
-        "request": request
-    })
+# @app.get("/forgot-username", response_class=HTMLResponse)
+# async def forgot_username_form(request: Request):
+#     # Renders the form asking for the user's email
+#     return templates.TemplateResponse("forgot_username.html", {"request": request})
+#
+#
+# @app.post("/forgot-username") # Removed response_class=HTMLResponse, uses TemplateResponse
+# async def forgot_username_submit(request: Request, email: str = Form(...)):
+#     # ... (implementation removed) ...
+#     return templates.TemplateResponse("forgot_username_result.html", {
+#         "request": request
+#     })
 
 # --- End Forgot Username Routes ---
 
