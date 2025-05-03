@@ -47,6 +47,15 @@ def verify_user(email: str, password: str) -> bool:
             print(f"❌ No user found with email: {email}")
             return False
 
+        # --- Add Banned/Disabled Check ---
+        if user.get("is_banned"):
+            print(f"⛔ Login failed for {email}: User is banned.")
+            return False
+        if user.get("is_disabled"):
+            print(f"⚠️ Login failed for {email}: User is disabled.")
+            return False
+        # --- End Banned/Disabled Check ---
+
         stored_hash = user['password_hash']
         # Keep password logging as is, or update context if desired
         print(f"🔐 Entered password (raw) for email {email}: {password}")
@@ -271,3 +280,51 @@ def get_admin_stats():
     return stats, users
 
 # --- End Admin Functions ---
+
+# --- User Status Update Function ---
+
+def update_user_status(email: str, status_field: str, value: bool):
+    """Updates a user's status field (is_banned or is_disabled) in the database."""
+    if status_field not in ["is_banned", "is_disabled"]:
+        print(f"⚠️ Invalid status field provided: {status_field}")
+        return False # Or raise an error
+
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor()
+
+        # Construct the query safely - DO NOT use f-strings directly with SQL field names if they came from user input
+        # Since status_field is validated against a known list, this is safe here.
+        query = f"UPDATE users SET {status_field} = %s WHERE email = %s"
+        params = (int(value), email) # Convert boolean to integer for DB
+
+        cursor.execute(query, params)
+        conn.commit()
+
+        if cursor.rowcount > 0:
+            print(f"✅ User '{email}' status updated: {status_field} set to {value}")
+            return True
+        else:
+            print(f"⚠️ User '{email}' not found or status already set.")
+            return False # Indicate user not found or no change needed
+
+    except mysql.connector.Error as err:
+        print(f"🔥 DB Error updating status for {email}: {err}")
+        return False
+    except Exception as e:
+        print(f"🔥 Unexpected error updating status for {email}: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+# --- End User Status Update Function ---

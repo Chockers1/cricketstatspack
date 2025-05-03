@@ -132,6 +132,31 @@
     .badge-unpaid { background-color: #dc3545; } /* Red */
     .badge-error_retrieving { background-color: #6c757d; } /* Grey */
 
+    /* Basic styling for action buttons */
+    td form {
+        display: inline-block; /* Keep buttons on the same line if space allows */
+        margin-right: 5px;
+    }
+    td button {
+        padding: 0.3rem 0.6rem;
+        font-size: 0.8rem;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        cursor: pointer;
+        background-color: #f8f9fa;
+        transition: background-color 0.2s ease;
+    }
+    td button:hover {
+        background-color: #e2e6ea;
+    }
+    /* Specific button styles (optional) */
+    form[action="/admin/ban"] button { background-color: #fdd; border-color: #fbb; color: #c00; }
+    form[action="/admin/ban"] button:hover { background-color: #fcc; }
+    form[action="/admin/disable"] button { background-color: #fff3cd; border-color: #ffeeba; color: #856404; }
+    form[action="/admin/disable"] button:hover { background-color: #ffeeba; }
+    form[action="/admin/enable"] button { background-color: #d4edda; border-color: #c3e6cb; color: #155724; }
+    form[action="/admin/enable"] button:hover { background-color: #c3e6cb; }
+
   </style>
 </head>
 <body>
@@ -181,6 +206,8 @@
             <th>Period Ends</th> {# Added Column #}
             <th>Stripe Customer ID</th>
             <th>Reset Attempts</th>
+            <th>Status</th>   {# Added Column #}
+            <th>Actions</th>  {# Added Column #}
           </tr>
         </thead>
         <tbody>
@@ -209,11 +236,39 @@
                 <td>{{ user.current_period_end_formatted or 'N/A' }}</td> {# Use formatted date #}
                 <td>{{ user.stripe_customer_id or 'None' }}</td>
                 <td>{{ user.reset_attempts }}</td>
+                <td> {# Status Column #}
+                  {% if user.is_banned %}
+                    🔴 Banned
+                  {% elif user.is_disabled %}
+                    ⚠️ Disabled
+                  {% else %}
+                    ✅ Active
+                  {% endif %}
+                </td>
+                <td> {# Actions Column #}
+                  {% if not user.is_banned %}
+                    <form method="post" action="/admin/ban" style="display: inline;">
+                      <input type="hidden" name="email" value="{{ user.email }}">
+                      <button type="submit">Ban</button>
+                    </form>
+                  {% endif %}
+                  {% if not user.is_disabled and not user.is_banned %} {# Can't disable if banned #}
+                    <form method="post" action="/admin/disable" style="display: inline;">
+                      <input type="hidden" name="email" value="{{ user.email }}">
+                      <button type="submit">Disable</button>
+                    </form>
+                  {% elif user.is_disabled %} {# Show enable only if disabled #}
+                    <form method="post" action="/admin/enable" style="display: inline;">
+                      <input type="hidden" name="email" value="{{ user.email }}">
+                      <button type="submit">Enable</button>
+                    </form>
+                  {% endif %}
+                </td>
               </tr>
               {% endfor %}
           {% else %}
               <tr>
-                  <td colspan="8">No user data available or error fetching data.</td> {# Updated colspan to 8 #}
+                  <td colspan="10">No user data available or error fetching data.</td> {# Updated colspan to 10 #}
               </tr>
           {% endif %}
         </tbody>

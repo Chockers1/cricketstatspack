@@ -13,8 +13,8 @@ import mysql.connector
 import bcrypt # Ensure bcrypt is imported
 from typing import Optional # Import Optional for optional form fields
 
-# Import the new admin function
-from auth_utils import verify_user, create_user, get_admin_stats
+# Import the new admin function and status update function
+from auth_utils import verify_user, create_user, get_admin_stats, update_user_status
 from stripe_payments import router as stripe_payments_router # Add this import
 from stripe_webhook import router as stripe_webhook_router # Add this import
 
@@ -585,4 +585,48 @@ async def admin_dashboard(request: Request):
     })
 
 # --- End Admin Dashboard Route ---
+
+
+# --- Admin Action Routes ---
+
+# Helper function for admin check (to avoid repetition)
+def verify_admin(request: Request):
+    user_email = request.session.get("user_id")
+    if user_email != os.getenv("ADMIN_EMAIL", "r.taylor289@gmail.com"): # Use env var or default
+        print(f"🚨 Unauthorized access attempt to admin action by: {user_email or 'Not logged in'}")
+        raise HTTPException(status_code=403, detail="Access denied")
+    print(f"✅ Admin action authorized for: {user_email}")
+    return user_email # Return email if verified
+
+@app.post("/admin/ban")
+async def ban_user(request: Request, email: str = Form(...)):
+    verify_admin(request) # Check if admin
+    if update_user_status(email, "is_banned", True):
+        print(f"✅ User '{email}' banned successfully.")
+    else:
+        print(f"⚠️ Failed to ban user '{email}'.")
+        # Optionally add flash message or handle error differently
+    return RedirectResponse("/admin", status_code=302)
+
+@app.post("/admin/disable")
+async def disable_user(request: Request, email: str = Form(...)):
+    verify_admin(request) # Check if admin
+    if update_user_status(email, "is_disabled", True):
+         print(f"✅ User '{email}' disabled successfully.")
+         # Also ensure banned status is not conflicting if needed (e.g., disable implies not banned)
+         # update_user_status(email, "is_banned", False) # Optional: Ensure ban is removed if disabling
+    else:
+         print(f"⚠️ Failed to disable user '{email}'.")
+    return RedirectResponse("/admin", status_code=302)
+
+@app.post("/admin/enable")
+async def enable_user(request: Request, email: str = Form(...)):
+    verify_admin(request) # Check if admin
+    if update_user_status(email, "is_disabled", False):
+        print(f"✅ User '{email}' enabled successfully.")
+    else:
+        print(f"⚠️ Failed to enable user '{email}'.")
+    return RedirectResponse("/admin", status_code=302)
+
+# --- End Admin Action Routes ---
 
