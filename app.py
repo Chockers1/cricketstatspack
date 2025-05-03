@@ -399,9 +399,9 @@ async def reset_password_submit(request: Request, new_password: str = Form(...),
         # Check if the update was successful
         if cursor.rowcount == 1:
             print(f"Password successfully reset for username: {username}")
-            # 4. Clear the session key and redirect to login on success
+            # 4. Clear the session key and redirect to the new success page
             request.session.pop('reset_user', None) # Safely remove the key
-            return RedirectResponse("/login?message=Password+reset+successfully", status_code=302)
+            return RedirectResponse("/reset-password-success", status_code=302) # Updated redirect
         else:
             # This might happen if the user was deleted between verification and reset
             print(f"Password reset failed for username: {username}. User might no longer exist.")
@@ -433,6 +433,16 @@ async def reset_password_submit(request: Request, new_password: str = Form(...),
             conn.close()
 
 # --- End Reset Password Routes ---
+
+# --- Reset Password Success Route ---
+
+@app.get("/reset-password-success", response_class=HTMLResponse)
+async def reset_password_success(request: Request):
+    # Renders a simple success page after password reset
+    return templates.TemplateResponse("reset_password_success.html", {"request": request})
+
+# --- End Reset Password Success Route ---
+
 
 # --- Change Password Routes ---
 
