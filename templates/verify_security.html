@@ -1,14 +1,25 @@
 <h2>Verify Identity</h2>
+
 <form method="post">
-    <label>Username:</label>
-    <input type="text" name="username" required><br>
+  <label>Username:</label><br>
+  {# Pre-fill username if provided, make readonly if questions are shown #}
+  <input type="text" name="username" value="{{ username or '' }}" {% if questions %}readonly{% endif %} required><br><br>
 
-    <label>Security Question 1 Answer:</label>
-    <input type="text" name="answer1" required><br>
+  {% if questions %}
+    {# Display questions and answer fields if questions are available #}
+    <label>{{ questions[0] }}</label><br> {# Assuming questions is a list/tuple #}
+    <input type="text" name="answer1" required><br><br>
 
-    <label>Security Question 2 Answer:</label>
-    <input type="text" name="answer2" required><br>
+    <label>{{ questions[1] }}</label><br> {# Assuming questions is a list/tuple #}
+    <input type="text" name="answer2" required><br><br>
 
     <button type="submit">Verify</button>
-    {% if error %}<p style="color:red;">{{ error }}</p>{% endif %}
+  {% else %}
+    {# Only show Continue button initially #}
+    <button type="submit">Continue</button>
+  {% endif %}
+
+  {% if error %}
+    <p style="color:red;">{{ error }}</p>
+  {% endif %}
 </form>

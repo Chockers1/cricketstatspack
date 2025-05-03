@@ -11,6 +11,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from datetime import datetime # Remove timedelta if not used elsewhere
 import mysql.connector
 import bcrypt # Ensure bcrypt is imported
+from typing import Optional # Import Optional for optional form fields
 
 from auth_utils import verify_user, create_user
 from stripe_payments import router as stripe_payments_router # Add this import
@@ -191,19 +192,25 @@ async def success_page(request: Request):
 # The entire /forgot-password GET and POST routes are removed.
 # --- End Remove Forgot Password Routes ---
 
-# --- Security Question Verification Routes ---
+# --- Security Question Verification Routes (Updated for Two-Step) ---
 
 @app.get("/verify-security", response_class=HTMLResponse)
 async def verify_security_form(request: Request):
-    # Renders the security question verification form
-    return templates.TemplateResponse("verify_security.html", {"request": request, "error": None})
+    # Renders the initial form asking for username only
+    # Pass questions=None initially
+    return templates.TemplateResponse("verify_security.html", {
+        "request": request,
+        "questions": None,
+        "error": None,
+        "username": None # Ensure username is None initially
+    })
 
-@app.post("/verify-security") # Removed response_class=HTMLResponse, will use RedirectResponse on success
+@app.post("/verify-security") # Removed response_class=HTMLResponse, uses Redirect or TemplateResponse
 async def verify_security_submit(
     request: Request,
     username: str = Form(...),
-    answer1: str = Form(...),
-    answer2: str = Form(...)
+    answer1: Optional[str] = Form(None), # Make answers optional
+    answer2: Optional[str] = Form(None)  # Make answers optional
 ):
     conn = None
     cursor = None
@@ -214,61 +221,111 @@ async def verify_security_submit(
             password=os.getenv("DB_PASS"),
             database=os.getenv("DB_NAME")
         )
-        cursor = conn.cursor(dictionary=True) # Use dictionary cursor
+        cursor = conn.cursor(dictionary=True)
 
-        # Fetch user and security answers
-        cursor.execute("SELECT id, security_answer_1_hash, security_answer_2_hash, reset_attempts FROM users WHERE username = %s", (username,))
+        # Fetch user data including questions and hashes
+        cursor.execute(
+            "SELECT id, security_question_1, security_answer_1_hash, "
+            "security_question_2, security_answer_2_hash, reset_attempts "
+            "FROM users WHERE username = %s", (username,)
+        )
         user = cursor.fetchone()
 
-        # Use a generic error message to avoid revealing if a user exists
-        generic_error = "Invalid username or answers."
+        # Generic error for user not found or missing questions/hashes later
+        generic_error = "Invalid username or answers." # Keep generic error
 
         if not user:
-            print(f"Security verification attempt for non-existent user: {username}")
-            return templates.TemplateResponse("verify_security.html", {"request": request, "error": generic_error}, status_code=400)
+            print(f"Security verification step 1 failed: User not found - {username}")
+            return templates.TemplateResponse("verify_security.html", {
+                "request": request,
+                "questions": None,
+                "username": username, # Pass username back
+                "error": "User not found." # Specific error for step 1 failure
+            }, status_code=404)
 
-        # Check reset attempts
-        if user.get('reset_attempts', 0) >= 3: # Default to 0 if column is somehow NULL
+        # Check reset attempts *before* proceeding
+        if user.get('reset_attempts', 0) >= 3:
             print(f"Security verification blocked for user {username} due to too many attempts.")
-            return templates.TemplateResponse("verify_security.html", {"request": request, "error": "Too many failed attempts. Please contact support."}, status_code=403) # Use 403 Forbidden
+            return templates.TemplateResponse("verify_security.html", {
+                "request": request,
+                "questions": None, # Don't show questions if blocked
+                "username": username,
+                "error": "Too many failed attempts. Please contact support."
+            }, status_code=403)
 
-        # Verify answers using bcrypt
-        # Ensure security answer columns exist and are not NULL before encoding
+        # Check if security questions/hashes exist in the user record
+        q1 = user.get('security_question_1')
         sa1_hash = user.get('security_answer_1_hash')
+        q2 = user.get('security_question_2')
         sa2_hash = user.get('security_answer_2_hash')
 
-        if not sa1_hash or not sa2_hash:
-             print(f"Security answers missing for user {username}.")
-             # Increment attempts even if answers are missing to prevent probing
-             cursor.execute("UPDATE users SET reset_attempts = reset_attempts + 1 WHERE id = %s", (user['id'],))
-             conn.commit()
-             return templates.TemplateResponse("verify_security.html", {"request": request, "error": generic_error}, status_code=400)
+        if not q1 or not sa1_hash or not q2 or not sa2_hash:
+            print(f"Security questions/hashes missing for user {username}.")
+            # Don't increment attempts here, just prevent proceeding
+            return templates.TemplateResponse("verify_security.html", {
+                "request": request,
+                "questions": None,
+                "username": username,
+                "error": "Security questions not set up for this account. Please contact support."
+            }, status_code=400)
 
-        correct1 = bcrypt.checkpw(answer1.encode('utf-8'), sa1_hash.encode('utf-8'))
-        correct2 = bcrypt.checkpw(answer2.encode('utf-8'), sa2_hash.encode('utf-8'))
+        # --- Logic based on whether answers were submitted ---
 
-        if correct1 and correct2:
-            print(f"Security verification successful for user: {username}")
-            # Reset attempt count
-            cursor.execute("UPDATE users SET reset_attempts = 0 WHERE id = %s", (user['id'],))
-            conn.commit()
-
-            # Store username in session temporarily for reset step
-            request.session['reset_user'] = username
-            return RedirectResponse("/reset-password", status_code=302)
+        if answer1 is None or answer2 is None:
+            # Step 1 completed (username submitted), now show questions
+            print(f"Security verification step 1 successful for {username}. Showing questions.")
+            return templates.TemplateResponse("verify_security.html", {
+                "request": request,
+                "questions": [q1, q2], # Pass the actual questions
+                "username": username, # Pass username to keep it in the form (readonly)
+                "error": None
+            })
         else:
-            print(f"Security verification failed for user: {username}")
-            # Increment attempt count
-            cursor.execute("UPDATE users SET reset_attempts = reset_attempts + 1 WHERE id = %s", (user['id'],))
-            conn.commit()
-            return templates.TemplateResponse("verify_security.html", {"request": request, "error": generic_error}, status_code=400)
+            # Step 2: Answers submitted, verify them
+            correct1 = bcrypt.checkpw(answer1.encode('utf-8'), sa1_hash.encode('utf-8'))
+            correct2 = bcrypt.checkpw(answer2.encode('utf-8'), sa2_hash.encode('utf-8'))
+
+            if correct1 and correct2:
+                print(f"Security verification step 2 successful for user: {username}")
+                # Reset attempt count on success
+                cursor.execute("UPDATE users SET reset_attempts = 0 WHERE id = %s", (user['id'],))
+                conn.commit()
+
+                # Store username in session for the reset step
+                request.session['reset_user'] = username # Use existing key 'reset_user'
+                return RedirectResponse("/reset-password", status_code=302)
+            else:
+                print(f"Security verification step 2 failed for user: {username}")
+                # Increment attempt count on failure
+                cursor.execute("UPDATE users SET reset_attempts = reset_attempts + 1 WHERE id = %s", (user['id'],))
+                conn.commit()
+                # Re-render the form with questions and error message
+                return templates.TemplateResponse("verify_security.html", {
+                    "request": request,
+                    "questions": [q1, q2], # Show questions again
+                    "username": username,
+                    "error": "Incorrect answers. Please try again." # Specific error for step 2 failure
+                }, status_code=400)
 
     except mysql.connector.Error as err:
         print(f"Database error during security verification for {username}: {err}")
-        return templates.TemplateResponse("verify_security.html", {"request": request, "error": "A database error occurred."}, status_code=500)
+        # Determine if questions should be shown based on whether answers were submitted
+        show_questions = [user.get('security_question_1'), user.get('security_question_2')] if user and answer1 is not None else None
+        return templates.TemplateResponse("verify_security.html", {
+            "request": request,
+            "questions": show_questions,
+            "username": username,
+            "error": "A database error occurred."
+        }, status_code=500)
     except Exception as e:
         print(f"Unexpected error during security verification for {username}: {e}")
-        return templates.TemplateResponse("verify_security.html", {"request": request, "error": "An unexpected error occurred."}, status_code=500)
+        show_questions = [user.get('security_question_1'), user.get('security_question_2')] if user and answer1 is not None else None
+        return templates.TemplateResponse("verify_security.html", {
+            "request": request,
+            "questions": show_questions,
+            "username": username,
+            "error": "An unexpected error occurred."
+        }, status_code=500)
     finally:
         if cursor:
             cursor.close()
