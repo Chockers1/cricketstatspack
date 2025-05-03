@@ -629,18 +629,61 @@ async def enable_user(request: Request, email: str = Form(...)):
         print(f"⚠️ Failed to enable user '{email}'.")
     return RedirectResponse("/admin", status_code=302)
 
+# Replace the previous handle_admin_reset_password route
 @app.post("/admin/reset-password")
-async def handle_admin_reset_password(request: Request, email: str = Form(...)):
-    verify_admin(request) # Check if admin
-    if admin_reset_password(email):
-        print(f"✅ Admin initiated password reset for '{email}'.")
-        # Optionally add success message (e.g., using flash or query param)
-        # Example: return RedirectResponse("/admin?reset_success=1", status_code=302)
-    else:
-        print(f"⚠️ Failed to initiate admin password reset for '{email}'.")
-        # Optionally add error message
-        # Example: return RedirectResponse("/admin?reset_error=1", status_code=302)
+async def reset_user_password(
+    request: Request,
+    email: str = Form(...),
+    new_password: str = Form(...)
+):
+    # --- Start: Code adapted from user prompt ---
+    # Ensure admin is logged in
+    verify_admin(request)
+
+    # Basic validation (optional but recommended)
+    if len(new_password) < 8:
+        print(f"⚠️ Admin password reset failed for '{email}': Password too short.")
+        # Consider adding user feedback here (e.g., flash message or query param)
+        return RedirectResponse("/admin", status_code=302) # Use 302 for redirect after POST
+
+    conn = None
+    cursor = None
+    try:
+        # Hash the new password (bcrypt is imported globally)
+        hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+        # Connect to DB (using pattern from elsewhere in the file)
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor()
+
+        # Update password_hash and reset attempts
+        cursor.execute("UPDATE users SET password_hash = %s, reset_attempts = 0 WHERE email = %s", (hashed_pw, email))
+        conn.commit()
+
+        if cursor.rowcount > 0:
+             print(f"🔐 Admin reset password for {email}")
+        else:
+             print(f"⚠️ Admin password reset: User {email} not found or DB error.")
+             # Consider adding user feedback here
+
+    except mysql.connector.Error as err:
+        print(f"🔥 DB Error during admin password reset for {email}: {err}")
+        # Consider adding user feedback here
+    except Exception as e:
+        print(f"🔥 Unexpected error during admin password reset for {email}: {e}")
+        # Consider adding user feedback here
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
+
+    # Redirect back to admin page (use 302 for redirect after POST)
     return RedirectResponse("/admin", status_code=302)
+    # --- End: Code adapted from user prompt ---
 
 # --- End Admin Action Routes ---
 

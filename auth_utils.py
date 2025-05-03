@@ -3,8 +3,6 @@ import bcrypt
 import os
 from dotenv import load_dotenv
 import stripe # Import stripe
-import secrets # For generating secure random passwords
-import string # For password character set
 
 load_dotenv()
 
@@ -334,18 +332,18 @@ def update_user_status(email: str, status_field: str, value: bool):
 
 # --- Admin Password Reset Function ---
 
-def admin_reset_password(email: str) -> bool:
-    """Generates a new random password, hashes it, and updates the user's record."""
+def admin_reset_password(email: str, new_password: str) -> bool: # Add new_password parameter
+    """Hashes the provided new password and updates the user's record."""
     conn = None
     cursor = None
     try:
-        # Generate a secure random password (e.g., 12 characters)
-        alphabet = string.ascii_letters + string.digits + string.punctuation
-        temp_password = ''.join(secrets.choice(alphabet) for i in range(12))
-        print(f"ℹ️ Generated temporary password for {email} (length {len(temp_password)}) - Not logging the password itself.")
+        # Remove password generation
+        # alphabet = string.ascii_letters + string.digits + string.punctuation
+        # temp_password = ''.join(secrets.choice(alphabet) for i in range(12))
+        # print(f"ℹ️ Generated temporary password for {email} (length {len(temp_password)}) - Not logging the password itself.")
 
-        # Hash the new password
-        hashed_pw = bcrypt.hashpw(temp_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        # Hash the provided new password
+        hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"),
@@ -363,12 +361,10 @@ def admin_reset_password(email: str) -> bool:
         conn.commit()
 
         if cursor.rowcount > 0:
-            print(f"✅ Password hash updated successfully for user '{email}'. User should use 'Forgot Password'.")
-            # IMPORTANT: Do NOT return the temp_password here.
-            # The admin should instruct the user to use the standard password reset flow.
+            print(f"✅ Password hash updated successfully by admin for user '{email}'.")
             return True
         else:
-            print(f"⚠️ User '{email}' not found for password reset.")
+            print(f"⚠️ User '{email}' not found for admin password reset.")
             return False
 
     except mysql.connector.Error as err:

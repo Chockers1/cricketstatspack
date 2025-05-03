@@ -159,6 +159,14 @@
     /* Style for Reset PW button */
     form[action="/admin/reset-password"] button { background-color: #cfe2ff; border-color: #b6d4fe; color: #084298; }
     form[action="/admin/reset-password"] button:hover { background-color: #b6d4fe; }
+    /* Style for Reset PW input */
+    form[action="/admin/reset-password"] input[type="text"] {
+        padding: 0.3rem 0.6rem;
+        font-size: 0.8rem;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        margin-right: 5px; /* Add some spacing */
+    }
 
   </style>
 </head>
@@ -266,10 +274,12 @@
                       <button type="submit">Enable</button>
                     </form>
                   {% endif %}
-                  {# Add Reset Password Button #}
-                  <form method="post" action="/admin/reset-password" style="display: inline;">
-                    <input type="hidden" name="email" value="{{ user.email }}">
-                    <button type="submit">Reset PW</button>
+
+                  {# Replace Reset Password Button with Input Form #}
+                  <form action="/admin/reset-password" method="post" style="display:inline; margin-top: 5px;">
+                      <input type="hidden" name="email" value="{{ user.email }}">
+                      <input type="text" name="new_password" placeholder="New Password" required>
+                      <button type="submit">Reset Password</button>
                   </form>
                 </td>
               </tr>
