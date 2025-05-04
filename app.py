@@ -1,19 +1,14 @@
 import os
 from dotenv import load_dotenv
-# Remove Query, uuid4, timedelta, send_reset_email from imports
-# Remove unused imports: Query, uuid4, timedelta, send_reset_email
 from fastapi import FastAPI, Request, Form, Depends, HTTPException
-# Add StreamingResponse import
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-# import secrets # Keep secrets if needed elsewhere, uuid is removed
 from datetime import datetime # Remove timedelta if not used elsewhere
 import mysql.connector
 import bcrypt # Ensure bcrypt is imported
 from typing import Optional # Import Optional for optional form fields
-# Add csv and io imports
 import csv
 from io import StringIO
 
@@ -705,10 +700,10 @@ async def reset_user_password(
 
 # --- End Admin Action Routes ---
 
-# --- Add Export Subscribers Route ---
+# --- Export Users Route (Renamed from export_subscribers) ---
 
-@app.get("/admin/export-subscribers")
-async def export_subscribers(request: Request): # Add request parameter
+@app.get("/admin/export-users") # Renamed route
+async def export_users(request: Request): # Renamed function, added request parameter
     # Ensure admin is logged in
     verify_admin(request)
 
@@ -726,38 +721,33 @@ async def export_subscribers(request: Request): # Add request parameter
         )
         cursor = conn.cursor(dictionary=True) # Use dictionary cursor
 
-        # Fetch relevant data for premium users
-        # Adjusted fields based on existing schema/dashboard
+        # Fetch relevant data for ALL users, removed WHERE clause, added reset_attempts
         cursor.execute("""
             SELECT email, created_at, is_premium, subscription_type, subscription_status,
-                   current_period_end, stripe_customer_id, is_banned, is_disabled
+                   current_period_end, stripe_customer_id, is_banned, is_disabled, reset_attempts
             FROM users
-            WHERE is_premium = 1
             ORDER BY created_at DESC
         """)
         rows = cursor.fetchall()
-        print(f"📊 Found {len(rows)} premium subscribers for export.")
+        print(f"📊 Found {len(rows)} users for export.") # Updated log message
 
     except mysql.connector.Error as err:
-        print(f"🔥 DB Error during subscriber export: {err}")
+        print(f"🔥 DB Error during user export: {err}") # Updated log message
         # Optionally return an error response or redirect
         raise HTTPException(status_code=500, detail="Database error during export.")
     except Exception as e:
-        print(f"🔥 Unexpected error during subscriber export: {e}")
+        print(f"🔥 Unexpected error during user export: {e}") # Updated log message
         raise HTTPException(status_code=500, detail="Unexpected error during export.")
     finally:
         if cursor: cursor.close()
         if conn and conn.is_connected(): conn.close()
 
-    # Handle case with no subscribers found
+    # Handle case with no users found
     if not rows:
-        print("⚠️ No premium subscribers found to export.")
-        # Return an empty CSV or a message? Returning empty CSV for now.
+        print("⚠️ No users found to export.") # Updated log message
         output = StringIO()
-        output.write("No premium subscribers found.") # Or just leave empty
+        output.write("No users found.")
         output.seek(0)
-        # Or could redirect back with a message:
-        # return RedirectResponse("/admin?export_status=empty", status_code=302)
     else:
         # Create CSV in memory
         output = StringIO()
@@ -766,7 +756,7 @@ async def export_subscribers(request: Request): # Add request parameter
         writer = csv.DictWriter(output, fieldnames=fieldnames)
 
         writer.writeheader()
-        # Format datetime objects if necessary before writing
+        # Format datetime objects and boolean/tinyint fields if necessary before writing
         for row in rows:
             if isinstance(row.get('created_at'), datetime):
                 row['created_at'] = row['created_at'].strftime('%Y-%m-%d %H:%M:%S')
@@ -776,16 +766,21 @@ async def export_subscribers(request: Request): # Add request parameter
             row['is_premium'] = 'Yes' if row.get('is_premium') else 'No'
             row['is_banned'] = 'Yes' if row.get('is_banned') else 'No'
             row['is_disabled'] = 'Yes' if row.get('is_disabled') else 'No'
+            # Ensure None values are handled gracefully (e.g., become empty strings in CSV)
+            for key, value in row.items():
+                if value is None:
+                    row[key] = ''
+
 
         writer.writerows(rows)
         output.seek(0)
 
-    # Return StreamingResponse
+    # Return StreamingResponse with updated filename
     return StreamingResponse(
         output,
         media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=subscribers.csv"}
+        headers={"Content-Disposition": "attachment; filename=users.csv"} # Updated filename
     )
 
-# --- End Export Subscribers Route ---
+# --- End Export Users Route ---
 
