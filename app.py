@@ -8,7 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 # Add BaseHTTPMiddleware import
 from starlette.middleware.base import BaseHTTPMiddleware
-from datetime import datetime # Remove timedelta if not used elsewhere
+# Add timedelta for lockout calculation
+from datetime import datetime, timedelta
 import mysql.connector
 import bcrypt # Ensure bcrypt is imported
 from typing import Optional # Import Optional for optional form fields
@@ -142,21 +143,97 @@ async def login_form(request: Request):
 @limiter.limit("5/minute") # Apply rate limiting
 async def login_submit(request: Request, email: str = Form(...), password: str = Form(...)): # Changed username to email
     print("🚨 Login POST received")
-    # Use email for verification
-    if verify_user(email, password):
-        print(f"✅ Login success for {email} — redirecting to dashboard")
-        # Update log_action call as requested
-        log_action(email, "login", "User logged in successfully")
-        # Store email identifier in session
-        request.session["user_id"] = email # Store email as user_id
-        # Store login time in session
-        request.session["login_time"] = datetime.utcnow().isoformat()
-        response = RedirectResponse(url="/dashboard", status_code=302)
-        return response
-    else:
-        print(f"❌ Login failed — invalid email/password for {email}")
-        log_action(email, "LOGIN_FAILURE", "Invalid email/password") # Keep failure log
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid login"}) # Keep generic error
+
+    conn = None
+    cursor = None
+    user_lock_data = None
+    lockout_threshold = 5
+    lockout_duration_minutes = 15
+
+    try:
+        # --- 1. Check for existing lock BEFORE verifying password ---
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"), password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT email, failed_logins, lock_until FROM users WHERE email = %s", (email,))
+        user_lock_data = cursor.fetchone()
+
+        if user_lock_data:
+            lock_until = user_lock_data.get("lock_until")
+            # Check if account is locked
+            if lock_until and datetime.now() < lock_until: # Use datetime.now() for comparison
+                lock_remaining = lock_until - datetime.now()
+                minutes_remaining = int(lock_remaining.total_seconds() / 60) + 1 # Round up minutes
+                error_message = f"Account temporarily locked due to too many failed attempts. Try again in {minutes_remaining} minute(s)."
+                print(f"🔒 Login attempt failed for {email}: Account locked until {lock_until}")
+                log_action(email, "LOGIN_FAILURE", "Account locked")
+                return templates.TemplateResponse("login.html", {"request": request, "error": error_message}, status_code=403) # Use 403 status
+
+        # --- 2. Verify Password (if not locked) ---
+        # verify_user handles password check, banned/disabled status, and Stripe fallback
+        is_valid_user = verify_user(email, password)
+
+        if is_valid_user:
+            # --- 3. Login Success: Reset failures and proceed ---
+            print(f"✅ Login success for {email} — redirecting to dashboard")
+            log_action(email, "login", "User logged in successfully") # Already logging success
+
+            # Reset failures and lock_until in DB
+            if user_lock_data and user_lock_data.get("failed_logins", 0) > 0: # Only update if there were previous failures
+                cursor.execute("UPDATE users SET failed_logins = 0, lock_until = NULL WHERE email = %s", (email,))
+                conn.commit()
+                print(f"🔄 Reset failed login attempts for {email}.")
+
+            # Store session info
+            request.session["user_id"] = email
+            request.session["login_time"] = datetime.utcnow().isoformat() # Use UTCNow for consistency
+            response = RedirectResponse(url="/dashboard", status_code=302)
+            return response
+        else:
+            # --- 4. Login Failure: Increment failures, check for lockout ---
+            print(f"❌ Login failed — invalid credentials or status for {email}")
+
+            if user_lock_data: # User exists, password failed or user is banned/disabled
+                current_failures = user_lock_data.get("failed_logins", 0)
+                new_failures = current_failures + 1
+                lock_until_update = user_lock_data.get("lock_until") # Keep existing lock if already set
+
+                error_message = "Invalid login" # Default error
+
+                if new_failures >= lockout_threshold:
+                    # Lock the account if threshold reached
+                    lock_until_update = datetime.now() + timedelta(minutes=lockout_duration_minutes)
+                    error_message = f"Account locked due to too many failed attempts. Try again in {lockout_duration_minutes} minutes."
+                    print(f"🚫 Account for {email} locked until {lock_until_update}")
+                    log_action(email, "ACCOUNT_LOCKED", f"Locked after {new_failures} failed attempts")
+                else:
+                    # Log failed attempt without locking yet
+                    log_action(email, "LOGIN_FAILURE", f"Invalid credentials/status ({new_failures} attempts)")
+
+                # Update DB with new failure count and potential lock time
+                cursor.execute(
+                    "UPDATE users SET failed_logins = %s, lock_until = %s WHERE email = %s",
+                    (new_failures, lock_until_update, email)
+                )
+                conn.commit()
+                print(f"📈 Updated failed login attempts for {email} to {new_failures}.")
+                # Return appropriate error message (locked or generic invalid)
+                return templates.TemplateResponse("login.html", {"request": request, "error": error_message}, status_code=401 if lock_until_update else 401) # Use 401 for invalid creds
+
+            else: # User not found in DB at all
+                log_action(email, "LOGIN_FAILURE", "User not found")
+                return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid login"}, status_code=401)
+
+    except mysql.connector.Error as db_err:
+        print(f"🔥 DB Error during login for {email}: {db_err}")
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Database error during login."}, status_code=500)
+    except Exception as e:
+        print(f"🔥 Unexpected error during login for {email}: {e}")
+        return templates.TemplateResponse("login.html", {"request": request, "error": "An unexpected error occurred."}, status_code=500)
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
 
 # Registration page
 @app.get("/register", response_class=HTMLResponse)
