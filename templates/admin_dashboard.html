@@ -171,6 +171,21 @@
     form[action="/admin/unban"] button { background-color: #ffecb3; border-color: #ffe082; color: #664d03; }
     form[action="/admin/unban"] button:hover { background-color: #ffe082; }
 
+    /* Style for Export button */
+    form[action="/admin/export-subscribers"] {
+        margin-bottom: 1.5rem; /* Add some space below the button */
+    }
+    form[action="/admin/export-subscribers"] button {
+        background-color: #e2e3e5; /* Light grey */
+        border-color: #d3d6d8;
+        color: #41464b;
+        padding: 0.5rem 1rem; /* Slightly larger padding */
+        font-size: 0.9rem;
+    }
+    form[action="/admin/export-subscribers"] button:hover {
+        background-color: #d3d6d8;
+    }
+
   </style>
 </head>
 <body>
@@ -179,6 +194,11 @@
       <a href="/logout">Logout</a>
     </div>
     <h1>Admin Dashboard</h1>
+
+    {# Add Export Button Form Here #}
+    <form method="get" action="/admin/export-subscribers">
+        <button type="submit">📤 Export Subscribers (CSV)</button>
+    </form>
 
     <div class="card">
       <h2>Statistics</h2>

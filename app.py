@@ -3,7 +3,8 @@ from dotenv import load_dotenv
 # Remove Query, uuid4, timedelta, send_reset_email from imports
 # Remove unused imports: Query, uuid4, timedelta, send_reset_email
 from fastapi import FastAPI, Request, Form, Depends, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+# Add StreamingResponse import
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -12,6 +13,10 @@ from datetime import datetime # Remove timedelta if not used elsewhere
 import mysql.connector
 import bcrypt # Ensure bcrypt is imported
 from typing import Optional # Import Optional for optional form fields
+# Add csv and io imports
+import csv
+from io import StringIO
+
 
 # Import the new admin function, status update function, and reset function
 from auth_utils import verify_user, create_user, get_admin_stats, update_user_status, admin_reset_password
@@ -699,4 +704,88 @@ async def reset_user_password(
     # --- End: Code adapted from user prompt ---
 
 # --- End Admin Action Routes ---
+
+# --- Add Export Subscribers Route ---
+
+@app.get("/admin/export-subscribers")
+async def export_subscribers(request: Request): # Add request parameter
+    # Ensure admin is logged in
+    verify_admin(request)
+
+    conn = None
+    cursor = None
+    rows = [] # Initialize rows as empty list
+
+    try:
+        # Connect to DB (using pattern from elsewhere in the file)
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor(dictionary=True) # Use dictionary cursor
+
+        # Fetch relevant data for premium users
+        # Adjusted fields based on existing schema/dashboard
+        cursor.execute("""
+            SELECT email, created_at, is_premium, subscription_type, subscription_status,
+                   current_period_end, stripe_customer_id, is_banned, is_disabled
+            FROM users
+            WHERE is_premium = 1
+            ORDER BY created_at DESC
+        """)
+        rows = cursor.fetchall()
+        print(f"📊 Found {len(rows)} premium subscribers for export.")
+
+    except mysql.connector.Error as err:
+        print(f"🔥 DB Error during subscriber export: {err}")
+        # Optionally return an error response or redirect
+        raise HTTPException(status_code=500, detail="Database error during export.")
+    except Exception as e:
+        print(f"🔥 Unexpected error during subscriber export: {e}")
+        raise HTTPException(status_code=500, detail="Unexpected error during export.")
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
+
+    # Handle case with no subscribers found
+    if not rows:
+        print("⚠️ No premium subscribers found to export.")
+        # Return an empty CSV or a message? Returning empty CSV for now.
+        output = StringIO()
+        output.write("No premium subscribers found.") # Or just leave empty
+        output.seek(0)
+        # Or could redirect back with a message:
+        # return RedirectResponse("/admin?export_status=empty", status_code=302)
+    else:
+        # Create CSV in memory
+        output = StringIO()
+        # Define fieldnames based on the actual query results
+        fieldnames = list(rows[0].keys())
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+
+        writer.writeheader()
+        # Format datetime objects if necessary before writing
+        for row in rows:
+            if isinstance(row.get('created_at'), datetime):
+                row['created_at'] = row['created_at'].strftime('%Y-%m-%d %H:%M:%S')
+            if isinstance(row.get('current_period_end'), datetime):
+                 row['current_period_end'] = row['current_period_end'].strftime('%Y-%m-%d %H:%M:%S')
+            # Convert boolean/tinyint fields for clarity
+            row['is_premium'] = 'Yes' if row.get('is_premium') else 'No'
+            row['is_banned'] = 'Yes' if row.get('is_banned') else 'No'
+            row['is_disabled'] = 'Yes' if row.get('is_disabled') else 'No'
+
+        writer.writerows(rows)
+        output.seek(0)
+
+    # Return StreamingResponse
+    return StreamingResponse(
+        output,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=subscribers.csv"}
+    )
+
+# --- End Export Subscribers Route ---
 
