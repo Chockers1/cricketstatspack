@@ -157,7 +157,12 @@ async def register_submit(
 async def subscribe_page(request: Request):
     if not request.session.get("user_id"):
         return RedirectResponse("/login")
-    return templates.TemplateResponse("subscribe.html", {"request": request})
+    # Pass Price IDs to the template context
+    return templates.TemplateResponse("subscribe.html", {
+        "request": request,
+        "monthly_price_id": os.getenv("STRIPE_PRICE_ID_MONTHLY"),
+        "annual_price_id": os.getenv("STRIPE_PRICE_ID_ANNUAL"),
+    })
 
 
 # Updated dashboard route to always check DB and update session using email

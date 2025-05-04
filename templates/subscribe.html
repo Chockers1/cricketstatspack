@@ -7,33 +7,57 @@
 <h2>Subscription Plans</h2>
 <p>Choose a plan to subscribe:</p>
 
-<!-- Example: Monthly Plan Button -->
+<!-- Monthly Plan Button -->
 <button id="subscribe-monthly-button">Subscribe Monthly</button>
 
-<!-- Add more buttons for other plans if needed -->
+<!-- Add Annual Plan Button -->
+<button id="subscribe-annual-button">Subscribe Annually</button>
 
 <p>Already have an account? <a href="/login">Login here</a> | <a href="/verify-security">Forgot password?</a></p>
 
 <script>
+    // Event listener for Monthly button
     document.getElementById('subscribe-monthly-button').addEventListener('click', function() {
         fetch('/create-checkout-session?plan=monthly', {
-            method: 'POST', // This is correctly set to POST
+            method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                // Include CSRF token if your Django setup requires it for POST requests
-                // 'X-CSRFToken': '{{ csrf_token }}'
+                // Include CSRF token if needed
             },
-            // body: JSON.stringify({}), // Add body if needed
+            // body: JSON.stringify({}) // No body needed for GET-like POST
         })
         .then(response => response.json())
         .then(session => {
             if (session.url) {
-                // Redirect the user to Stripe Checkout
                 window.location.href = session.url;
             } else {
-                // Handle errors (e.g., display a message to the user)
-                console.error('Error creating checkout session:', session);
-                alert('Could not initiate checkout. Please try again.');
+                console.error('Error creating monthly checkout session:', session);
+                alert('Could not initiate monthly checkout. Please try again.');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred. Please try again.');
+        });
+    });
+
+    // Add Event listener for Annual button
+    document.getElementById('subscribe-annual-button').addEventListener('click', function() {
+        fetch('/create-checkout-session?plan=annual', { // Use plan=annual
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                // Include CSRF token if needed
+            },
+            // body: JSON.stringify({}) // No body needed for GET-like POST
+        })
+        .then(response => response.json())
+        .then(session => {
+            if (session.url) {
+                window.location.href = session.url;
+            } else {
+                console.error('Error creating annual checkout session:', session);
+                alert('Could not initiate annual checkout. Please try again.');
             }
         })
         .catch(error => {
