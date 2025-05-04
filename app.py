@@ -969,8 +969,8 @@ async def view_user_details(email: str, request: Request):
     verify_admin(request) # Use the helper function for auth
 
     user_details = None # To store user data from 'users' table
-    sessions = []
-    reset_activity_count = 0
+    audit_logs = [] # Changed from sessions to audit_logs
+    reset_activity_count = 0 # Keep this as it queries audit_logs too
     conn = None
     cursor = None
 
@@ -983,7 +983,7 @@ async def view_user_details(email: str, request: Request):
         )
         cursor = conn.cursor(dictionary=True)
 
-        # Fetch user details from 'users' table
+        # Fetch user details from 'users' table (Keep this)
         cursor.execute("""
             SELECT email, created_at, is_premium, subscription_type, subscription_status,
                    current_period_end, stripe_customer_id, is_banned, is_disabled, reset_attempts,
@@ -996,7 +996,7 @@ async def view_user_details(email: str, request: Request):
         if not user_details:
              raise HTTPException(status_code=404, detail="User not found")
 
-        # Format dates for user details
+        # Format dates for user details (Keep this)
         if user_details.get('created_at'):
             user_details['created_at_formatted'] = user_details['created_at'].strftime('%Y-%m-%d %H:%M:%S UTC')
         if user_details.get('current_period_end'):
@@ -1009,33 +1009,22 @@ async def view_user_details(email: str, request: Request):
              user_details['lock_until_formatted'] = 'N/A'
 
 
-        # Fetch recent session logs
+        # Fetch recent audit logs for this user
         cursor.execute("""
-            SELECT email, login_time, logout_time, duration_seconds
-            FROM session_logs
+            SELECT timestamp, action, details
+            FROM audit_logs
             WHERE email=%s
-            ORDER BY login_time DESC
-            LIMIT 20
+            ORDER BY timestamp DESC
+            LIMIT 50
         """, (email,))
-        sessions = cursor.fetchall()
-        # Format dates/duration for display
-        for session in sessions:
-            if session.get('login_time'):
-                session['login_time_formatted'] = session['login_time'].strftime('%Y-%m-%d %H:%M:%S UTC')
-            if session.get('logout_time'):
-                 session['logout_time_formatted'] = session['logout_time'].strftime('%Y-%m-%d %H:%M:%S UTC')
-            else:
-                 session['logout_time_formatted'] = 'N/A' # Or 'Still Active?'
-            # Format duration
-            duration = session.get('duration_seconds') # Allow None
-            if duration is not None:
-                 minutes, seconds = divmod(duration, 60)
-                 session['duration_formatted'] = f"{minutes}m {seconds}s"
-            else:
-                 session['duration_formatted'] = "N/A"
+        audit_logs = cursor.fetchall()
+        # Format timestamp for display
+        for log in audit_logs:
+            if log.get('timestamp'):
+                log['timestamp_formatted'] = log['timestamp'].strftime('%Y-%m-%d %H:%M:%S UTC')
 
 
-        # Fetch password reset related activity count from audit logs (as before)
+        # Fetch password reset related activity count from audit logs (Keep this)
         cursor.execute("""
             SELECT COUNT(*) AS count
             FROM audit_logs
@@ -1055,12 +1044,12 @@ async def view_user_details(email: str, request: Request):
         if cursor: cursor.close()
         if conn and conn.is_connected(): conn.close()
 
-    # Pass user_details to the template
+    # Pass user_details and audit_logs to the template
     return templates.TemplateResponse("user_details.html", {
         "request": request,
         "user": user_details, # Pass the full user details dict
         "email": email, # Keep email for title consistency if needed
-        "sessions": sessions,
+        "logs": audit_logs, # Pass audit logs instead of sessions
         "reset_activity_count": reset_activity_count
     })
 # --- End Admin User Detail Route ---
