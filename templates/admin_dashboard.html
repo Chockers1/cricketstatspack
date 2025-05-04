@@ -224,6 +224,24 @@
     .session-stats-card table {
         margin-top: 0.5rem; /* Reduce margin if inside card */
     }
+    /* Style for View Activity button */
+    .btn-sm {
+        padding: 0.25rem 0.5rem;
+        font-size: .875rem;
+        border-radius: 0.2rem;
+    }
+    .btn-outline-primary {
+        color: #007bff;
+        border-color: #007bff;
+        background-color: transparent;
+        text-decoration: none; /* Ensure link looks like button */
+        display: inline-block; /* Ensure padding applies correctly */
+    }
+    .btn-outline-primary:hover {
+        color: #fff;
+        background-color: #007bff;
+        border-color: #007bff;
+    }
 
   </style>
 </head>
@@ -320,6 +338,7 @@
             <th>Stripe Customer ID</th>
             <th>Reset Attempts</th>
             <th>Status</th>   {# Added Column #}
+            <th>Activity</th> {# Added Activity Header #}
             <th>Actions</th>  {# Added Column #}
           </tr>
         </thead>
@@ -327,8 +346,8 @@
           {% if users %}
               {% for user in users %}
               <tr>
-                {# Make email a link to the user detail page #}
-                <td><a href="/admin/user/{{ user.email }}">{{ user.email }}</a></td>
+                {# Remove link from email #}
+                <td>{{ user.email }}</td>
                 <td>{{ user.created_at_formatted or (user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else 'N/A') }}</td>
                 <td>
                     <span class="badge {{ 'badge-yes' if user.is_premium else 'badge-no' }}">
@@ -358,6 +377,9 @@
                   {% else %}
                     ✅ Active {# Active is inferred if not banned or disabled #}
                   {% endif %}
+                </td>
+                <td> {# Activity Column #}
+                    <a class="btn btn-sm btn-outline-primary" href="/admin/user/{{ user.email }}">View</a>
                 </td>
                 <td> {# Actions Column #}
                   {# Remove the old magnifying glass link #}
@@ -400,7 +422,7 @@
               {% endfor %}
           {% else %}
               <tr>
-                  <td colspan="10">No user data available or error fetching data.</td> {# Updated colspan to 10 #}
+                  <td colspan="11">No user data available or error fetching data.</td> {# Updated colspan to 11 #}
               </tr>
           {% endif %}
         </tbody>
