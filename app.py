@@ -700,16 +700,17 @@ async def reset_user_password(
 
 # --- End Admin Action Routes ---
 
-# --- Export Users Route (Renamed from export_subscribers) ---
+# --- Export Users Route (Replacing previous implementation) ---
 
-@app.get("/admin/export-users") # Renamed route
-async def export_users(request: Request): # Renamed function, added request parameter
-    # Ensure admin is logged in
+@app.get("/admin/export-users", response_class=StreamingResponse) # Keep response_class
+async def export_users(request: Request): # Keep async and request parameter
+    # Security: only allow admin (using existing verify_admin helper)
     verify_admin(request)
 
     conn = None
     cursor = None
-    rows = [] # Initialize rows as empty list
+    rows = []
+    headers = []
 
     try:
         # Connect to DB (using pattern from elsewhere in the file)
@@ -719,9 +720,10 @@ async def export_users(request: Request): # Renamed function, added request para
             password=os.getenv("DB_PASS"),
             database=os.getenv("DB_NAME")
         )
-        cursor = conn.cursor(dictionary=True) # Use dictionary cursor
+        # Use standard cursor to match csv.writer which expects tuples/lists
+        cursor = conn.cursor()
 
-        # Fetch relevant data for ALL users, removed WHERE clause, added reset_attempts
+        # Fetch relevant data for ALL users - Adjusted fields
         cursor.execute("""
             SELECT email, created_at, is_premium, subscription_type, subscription_status,
                    current_period_end, stripe_customer_id, is_banned, is_disabled, reset_attempts
@@ -729,58 +731,61 @@ async def export_users(request: Request): # Renamed function, added request para
             ORDER BY created_at DESC
         """)
         rows = cursor.fetchall()
-        print(f"📊 Found {len(rows)} users for export.") # Updated log message
+        headers = [i[0] for i in cursor.description] # Get headers from cursor description
+        print(f"📊 Found {len(rows)} users for export.")
 
     except mysql.connector.Error as err:
-        print(f"🔥 DB Error during user export: {err}") # Updated log message
-        # Optionally return an error response or redirect
+        print(f"🔥 DB Error during user export: {err}")
         raise HTTPException(status_code=500, detail="Database error during export.")
     except Exception as e:
-        print(f"🔥 Unexpected error during user export: {e}") # Updated log message
+        print(f"🔥 Unexpected error during user export: {e}")
         raise HTTPException(status_code=500, detail="Unexpected error during export.")
     finally:
         if cursor: cursor.close()
         if conn and conn.is_connected(): conn.close()
 
-    # Handle case with no users found
-    if not rows:
-        print("⚠️ No users found to export.") # Updated log message
-        output = StringIO()
-        output.write("No users found.")
-        output.seek(0)
-    else:
-        # Create CSV in memory
-        output = StringIO()
-        # Define fieldnames based on the actual query results
-        fieldnames = list(rows[0].keys())
-        writer = csv.DictWriter(output, fieldnames=fieldnames)
+    # Create CSV in memory using io.StringIO and csv.writer
+    output = StringIO() # Use StringIO from io module
+    writer = csv.writer(output)
+    writer.writerow(headers) # Write headers first
 
-        writer.writeheader()
-        # Format datetime objects and boolean/tinyint fields if necessary before writing
-        for row in rows:
-            if isinstance(row.get('created_at'), datetime):
-                row['created_at'] = row['created_at'].strftime('%Y-%m-%d %H:%M:%S')
-            if isinstance(row.get('current_period_end'), datetime):
-                 row['current_period_end'] = row['current_period_end'].strftime('%Y-%m-%d %H:%M:%S')
-            # Convert boolean/tinyint fields for clarity
-            row['is_premium'] = 'Yes' if row.get('is_premium') else 'No'
-            row['is_banned'] = 'Yes' if row.get('is_banned') else 'No'
-            row['is_disabled'] = 'Yes' if row.get('is_disabled') else 'No'
-            # Ensure None values are handled gracefully (e.g., become empty strings in CSV)
-            for key, value in row.items():
-                if value is None:
-                    row[key] = ''
+    # Format and write rows
+    for row_tuple in rows:
+        formatted_row = list(row_tuple) # Convert tuple to list for modification
+        # Find indices of columns to format (adjust if query changes)
+        try:
+            created_at_idx = headers.index('created_at')
+            period_end_idx = headers.index('current_period_end')
+            is_premium_idx = headers.index('is_premium')
+            is_banned_idx = headers.index('is_banned')
+            is_disabled_idx = headers.index('is_disabled')
 
+            # Format datetime objects
+            if isinstance(formatted_row[created_at_idx], datetime):
+                formatted_row[created_at_idx] = formatted_row[created_at_idx].strftime('%Y-%m-%d %H:%M:%S')
+            if isinstance(formatted_row[period_end_idx], datetime):
+                 formatted_row[period_end_idx] = formatted_row[period_end_idx].strftime('%Y-%m-%d %H:%M:%S')
 
-        writer.writerows(rows)
-        output.seek(0)
+            # Format boolean/tinyint fields
+            formatted_row[is_premium_idx] = 'Yes' if formatted_row[is_premium_idx] else 'No'
+            formatted_row[is_banned_idx] = 'Yes' if formatted_row[is_banned_idx] else 'No'
+            formatted_row[is_disabled_idx] = 'Yes' if formatted_row[is_disabled_idx] else 'No'
 
-    # Return StreamingResponse with updated filename
-    return StreamingResponse(
-        output,
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=users.csv"} # Updated filename
-    )
+            # Handle None values -> empty strings
+            formatted_row = ["" if item is None else item for item in formatted_row]
+
+        except ValueError as ve:
+            print(f"⚠️ Error finding column index during CSV formatting: {ve}")
+            # Handle error - maybe skip formatting for this row or log more details
+            formatted_row = ["" if item is None else item for item in formatted_row] # Basic None handling
+
+        writer.writerow(formatted_row)
+
+    output.seek(0)
+    # Return StreamingResponse with the new filename
+    return StreamingResponse(output, media_type="text/csv", headers={
+        "Content-Disposition": "attachment; filename=all_users.csv" # Updated filename
+    })
 
 # --- End Export Users Route ---
 
