@@ -167,6 +167,9 @@
         border-radius: 4px;
         margin-right: 5px; /* Add some spacing */
     }
+    /* Style for Unban button */
+    form[action="/admin/unban"] button { background-color: #ffecb3; border-color: #ffe082; color: #664d03; }
+    form[action="/admin/unban"] button:hover { background-color: #ffe082; }
 
   </style>
 </head>
@@ -273,6 +276,14 @@
                       <input type="hidden" name="email" value="{{ user.email }}">
                       <button type="submit">Enable</button>
                     </form>
+                  {% endif %}
+
+                  {# Show Unban button only if banned #}
+                  {% if user.is_banned %}
+                  <form action="/admin/unban" method="post" style="display:inline;">
+                      <input type="hidden" name="email" value="{{ user.email }}">
+                      <button type="submit">Unban</button>
+                  </form>
                   {% endif %}
 
                   {# Reset Password Input Form - Confirming structure #}

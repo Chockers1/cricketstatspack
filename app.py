@@ -629,6 +629,19 @@ async def enable_user(request: Request, email: str = Form(...)):
         print(f"⚠️ Failed to enable user '{email}'.")
     return RedirectResponse("/admin", status_code=302)
 
+# Add the unban route
+@app.post("/admin/unban")
+async def unban_user(request: Request, email: str = Form(...)):
+    verify_admin(request) # Check if admin
+    # This correctly unbans the user by setting is_banned to False (0 in DB)
+    if update_user_status(email, "is_banned", False):
+        print(f"✅ User '{email}' unbanned successfully.")
+        # Optionally, ensure user is also enabled if unbanning implies enabling
+        # update_user_status(email, "is_disabled", False)
+    else:
+        print(f"⚠️ Failed to unban user '{email}'.")
+    return RedirectResponse("/admin", status_code=302)
+
 # Replace the previous handle_admin_reset_password route
 @app.post("/admin/reset-password")
 async def reset_user_password(
