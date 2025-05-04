@@ -327,7 +327,8 @@
           {% if users %}
               {% for user in users %}
               <tr>
-                <td>{{ user.email }}</td>
+                {# Make email a link to the user detail page #}
+                <td><a href="/admin/user/{{ user.email }}">{{ user.email }}</a></td>
                 <td>{{ user.created_at_formatted or (user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else 'N/A') }}</td>
                 <td>
                     <span class="badge {{ 'badge-yes' if user.is_premium else 'badge-no' }}">
@@ -359,8 +360,8 @@
                   {% endif %}
                 </td>
                 <td> {# Actions Column #}
-                  {# Add link to user details page #}
-                  <a href="/admin/user/{{ user.email }}" style="margin-right: 5px; font-size: 0.8rem; text-decoration: none;" title="View Details">🔍</a>
+                  {# Remove the old magnifying glass link #}
+                  {# <a href="/admin/user/{{ user.email }}" style="margin-right: 5px; font-size: 0.8rem; text-decoration: none;" title="View Details">🔍</a> #}
 
                   {% if not user.is_banned %}
                     <form method="post" action="/admin/ban" style="display: inline;">

@@ -963,13 +963,14 @@ async def reset_user_password(
 
 # --- End Admin Action Routes ---
 
-# --- New Admin User Detail Route ---
+# --- Admin User Detail Route (Updated) ---
 @app.get("/admin/user/{email}")
 async def view_user_details(email: str, request: Request):
     verify_admin(request) # Use the helper function for auth
 
+    user_details = None # To store user data from 'users' table
     sessions = []
-    reset_attempts_count = 0
+    reset_activity_count = 0
     conn = None
     cursor = None
 
@@ -982,37 +983,66 @@ async def view_user_details(email: str, request: Request):
         )
         cursor = conn.cursor(dictionary=True)
 
+        # Fetch user details from 'users' table
+        cursor.execute("""
+            SELECT email, created_at, is_premium, subscription_type, subscription_status,
+                   current_period_end, stripe_customer_id, is_banned, is_disabled, reset_attempts,
+                   failed_logins, lock_until
+            FROM users
+            WHERE email=%s
+        """, (email,))
+        user_details = cursor.fetchone()
+
+        if not user_details:
+             raise HTTPException(status_code=404, detail="User not found")
+
+        # Format dates for user details
+        if user_details.get('created_at'):
+            user_details['created_at_formatted'] = user_details['created_at'].strftime('%Y-%m-%d %H:%M:%S UTC')
+        if user_details.get('current_period_end'):
+            user_details['current_period_end_formatted'] = user_details['current_period_end'].strftime('%Y-%m-%d')
+        else:
+            user_details['current_period_end_formatted'] = 'N/A'
+        if user_details.get('lock_until'):
+            user_details['lock_until_formatted'] = user_details['lock_until'].strftime('%Y-%m-%d %H:%M:%S UTC')
+        else:
+             user_details['lock_until_formatted'] = 'N/A'
+
+
         # Fetch recent session logs
         cursor.execute("""
-            SELECT email, login_time, duration_seconds
+            SELECT email, login_time, logout_time, duration_seconds
             FROM session_logs
             WHERE email=%s
             ORDER BY login_time DESC
             LIMIT 20
         """, (email,))
         sessions = cursor.fetchall()
-        # Format dates for display
+        # Format dates/duration for display
         for session in sessions:
             if session.get('login_time'):
                 session['login_time_formatted'] = session['login_time'].strftime('%Y-%m-%d %H:%M:%S UTC')
+            if session.get('logout_time'):
+                 session['logout_time_formatted'] = session['logout_time'].strftime('%Y-%m-%d %H:%M:%S UTC')
+            else:
+                 session['logout_time_formatted'] = 'N/A' # Or 'Still Active?'
             # Format duration
-            duration = session.get('duration_seconds', 0)
-            if duration:
+            duration = session.get('duration_seconds') # Allow None
+            if duration is not None:
                  minutes, seconds = divmod(duration, 60)
                  session['duration_formatted'] = f"{minutes}m {seconds}s"
             else:
                  session['duration_formatted'] = "N/A"
 
 
-        # Fetch password reset related activity from audit logs
-        # Counting failures and successes as an indicator
+        # Fetch password reset related activity count from audit logs (as before)
         cursor.execute("""
             SELECT COUNT(*) AS count
             FROM audit_logs
             WHERE email=%s AND action LIKE '%RESET_PASSWORD%'
         """, (email,))
         result = cursor.fetchone()
-        reset_attempts_count = result['count'] if result else 0
+        reset_activity_count = result['count'] if result else 0
 
     except mysql.connector.Error as err:
         print(f"🔥 DB Error fetching user details for {email}: {err}")
@@ -1025,11 +1055,13 @@ async def view_user_details(email: str, request: Request):
         if cursor: cursor.close()
         if conn and conn.is_connected(): conn.close()
 
+    # Pass user_details to the template
     return templates.TemplateResponse("user_details.html", {
         "request": request,
-        "email": email,
+        "user": user_details, # Pass the full user details dict
+        "email": email, # Keep email for title consistency if needed
         "sessions": sessions,
-        "reset_activity_count": reset_attempts_count # Renamed for clarity
+        "reset_activity_count": reset_activity_count
     })
 # --- End Admin User Detail Route ---
 
