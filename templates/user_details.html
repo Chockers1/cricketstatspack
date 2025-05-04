@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}User Details: {{ email }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>User Details: {{ email }}</h2>
+    <hr>
+
+    <h4>Summary</h4>
+    <p><strong>Password Reset Activity (Attempts/Successes):</strong> {{ reset_activity_count }}</p>
+    <hr>
+
+    <h4>Recent Sessions (Last 20)</h4>
+    {% if sessions %}
+    <table class="table table-striped table-sm">
+        <thead>
+            <tr>
+                <th>Login Time (UTC)</th>
+                <th>Session Duration</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for session in sessions %}
+            <tr>
+                <td>{{ session.login_time_formatted }}</td>
+                <td>{{ session.duration_formatted }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No session history found for this user.</p>
+    {% endif %}
+
+    <a href="/admin" class="btn btn-secondary mt-3">Back to Admin Dashboard</a>
+</div>
+{% endblock %}

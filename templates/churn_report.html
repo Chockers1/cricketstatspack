@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Churn Report{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Churn Report</h2>
+    <p>Users whose subscriptions were cancelled or failed.</p>
+    <hr>
+
+    {% if churned %}
+    <table class="table table-striped table-sm">
+        <thead>
+            <tr>
+                <th>Email</th>
+                <th>Churn Timestamp (UTC)</th>
+                <th>Details (Event Type)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in churned %}
+            <tr>
+                <td>{{ user.email }}</td>
+                <td>{{ user.timestamp_formatted }}</td>
+                <td>{{ user.details }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No churn events found in the audit log.</p>
+    {% endif %}
+
+     <a href="/admin" class="btn btn-secondary mt-3">Back to Admin Dashboard</a>
+</div>
+{% endblock %}

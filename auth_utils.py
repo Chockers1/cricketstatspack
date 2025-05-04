@@ -3,6 +3,7 @@ import bcrypt
 import os
 from dotenv import load_dotenv
 import stripe # Import stripe
+from datetime import datetime # Add datetime import for log_action
 
 load_dotenv()
 
@@ -415,3 +416,30 @@ def admin_reset_password(email: str, new_password: str) -> bool: # Add new_passw
             conn.close()
 
 # --- End Admin Password Reset Function ---
+
+# --- Add Audit Log Helper ---
+def log_action(email: str, action: str, details: str = ""):
+    """Logs an action to the audit_logs table."""
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO audit_logs (email, action, details, timestamp) VALUES (%s, %s, %s, %s)",
+            (email, action, details, datetime.now()) # Add timestamp
+        )
+        conn.commit()
+    except mysql.connector.Error as db_err:
+        print(f"❌ Audit log DB error: {db_err}")
+    except Exception as e:
+        print(f"❌ Audit log failed: {e}")
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
+# --- End Audit Log Helper ---

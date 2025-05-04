@@ -23,13 +23,15 @@ from slowapi.errors import RateLimitExceeded
 
 
 # Import the new admin function, status update function, and reset function
-from auth_utils import verify_user, create_user, get_admin_stats, update_user_status, admin_reset_password
+# Add log_action to the imports
+from auth_utils import verify_user, create_user, get_admin_stats, update_user_status, admin_reset_password, log_action
 from stripe_payments import router as stripe_payments_router # Add this import
 from stripe_webhook import router as stripe_webhook_router # Add this import
 
 print("🔥 FASTAPI LOADED 🔥")
 
 load_dotenv()  # loads .env into os.environ
+
 
 # Define PageViewLoggerMiddleware
 class PageViewLoggerMiddleware(BaseHTTPMiddleware):
@@ -143,6 +145,8 @@ async def login_submit(request: Request, email: str = Form(...), password: str =
     # Use email for verification
     if verify_user(email, password):
         print(f"✅ Login success for {email} — redirecting to dashboard")
+        # Update log_action call as requested
+        log_action(email, "login", "User logged in successfully")
         # Store email identifier in session
         request.session["user_id"] = email # Store email as user_id
         # Store login time in session
@@ -151,6 +155,7 @@ async def login_submit(request: Request, email: str = Form(...), password: str =
         return response
     else:
         print(f"❌ Login failed — invalid email/password for {email}")
+        log_action(email, "LOGIN_FAILURE", "Invalid email/password") # Keep failure log
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid login"}) # Keep generic error
 
 # Registration page
@@ -181,6 +186,7 @@ async def register_submit(
 
     if not success:
         print(f"❌ Registration failed for email '{email}' — email might already exist")
+        log_action(email, "REGISTER_FAILURE", "Email already exists") # Log failure
         return templates.TemplateResponse("register.html", {
             "request": request,
             # Keep the specific error message
@@ -192,6 +198,7 @@ async def register_submit(
     cursor = None
     try:
         print(f"✅ User with email '{email}' created successfully. Attempting auto-login...")
+        log_action(email, "REGISTER_SUCCESS") # Log success
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"),
             user=os.getenv("DB_USER"),
@@ -208,6 +215,8 @@ async def register_submit(
             request.session["user_id"] = user["email"]
             # Initialize is_premium in session (will be refreshed by dashboard)
             request.session["is_premium"] = bool(user.get("is_premium", False))
+            # Log auto-login after registration
+            log_action(user["email"], "login", "User logged in successfully (auto-login after registration)")
             print(f"✅ Session set for auto-login: {user['email']}, Premium: {request.session['is_premium']}")
             # Redirect to dashboard after setting session
             return RedirectResponse("/dashboard", status_code=302)
@@ -298,6 +307,11 @@ async def logout(request: Request):
     # --- Add Session Duration Logging ---
     email = request.session.get("user_id") # Use 'user_id' key
     login_time_str = request.session.get("login_time")
+
+    if email: # Log logout action if email exists in session
+        # Update log_action call as requested and remove duplicate
+        log_action(email, "logout", "User logged out")
+        # log_action(email, "LOGOUT") # Remove duplicate
 
     if email and login_time_str:
         try:
@@ -396,6 +410,7 @@ async def verify_security_submit(
 
         if not user:
             print(f"Security verification step 1 failed: User not found - {email}")
+            log_action(email, "RESET_PASSWORD_VERIFY_FAILURE", "User not found") # Log failure
             return templates.TemplateResponse("verify_security.html", {
                 "request": request,
                 "questions": None,
@@ -406,6 +421,7 @@ async def verify_security_submit(
         # Check reset attempts *before* proceeding
         if user.get('reset_attempts', 0) >= 3:
             print(f"Security verification blocked for user {email} due to too many attempts.")
+            log_action(email, "RESET_PASSWORD_VERIFY_FAILURE", "Too many attempts") # Log failure
             return templates.TemplateResponse("verify_security.html", {
                 "request": request,
                 "questions": None,
@@ -421,6 +437,7 @@ async def verify_security_submit(
 
         if not q1 or not sa1_hash or not q2 or not sa2_hash:
             print(f"Security questions/hashes missing for user {email}.")
+            log_action(email, "RESET_PASSWORD_VERIFY_FAILURE", "Security questions not set up") # Log failure
             return templates.TemplateResponse("verify_security.html", {
                 "request": request,
                 "questions": None,
@@ -433,6 +450,7 @@ async def verify_security_submit(
         if answer1 is None or answer2 is None:
             # Step 1 completed (email submitted), now show questions
             print(f"Security verification step 1 successful for {email}. Showing questions.")
+            log_action(email, "RESET_PASSWORD_VERIFY_STEP1_SUCCESS") # Log step 1 success
             return templates.TemplateResponse("verify_security.html", {
                 "request": request,
                 "questions": [q1, q2],
@@ -446,6 +464,7 @@ async def verify_security_submit(
 
             if correct1 and correct2:
                 print(f"Security verification step 2 successful for user: {email}")
+                log_action(email, "RESET_PASSWORD_VERIFY_STEP2_SUCCESS") # Log step 2 success
                 cursor.execute("UPDATE users SET reset_attempts = 0 WHERE id = %s", (user['id'],))
                 conn.commit()
 
@@ -454,6 +473,7 @@ async def verify_security_submit(
                 return RedirectResponse("/reset-password", status_code=302)
             else:
                 print(f"Security verification step 2 failed for user: {email}")
+                log_action(email, "RESET_PASSWORD_VERIFY_STEP2_FAILURE", "Incorrect answers") # Log step 2 failure
                 cursor.execute("UPDATE users SET reset_attempts = reset_attempts + 1 WHERE id = %s", (user['id'],))
                 conn.commit()
                 return templates.TemplateResponse("verify_security.html", {
@@ -500,6 +520,7 @@ async def reset_password_submit(request: Request, new_password: str = Form(...),
     # Double-check session key existence on POST
     if 'reset_user' not in request.session:
         print("Access denied to /reset-password POST: No 'reset_user' (email) in session.")
+        # No email to log here reliably
         return RedirectResponse("/verify-security", status_code=303)
 
     email = request.session['reset_user'] # Get email from session
@@ -507,6 +528,7 @@ async def reset_password_submit(request: Request, new_password: str = Form(...),
     # 1. Check if passwords match
     if new_password != confirm_password:
         print(f"Password mismatch for user {email} during reset attempt.")
+        log_action(email, "RESET_PASSWORD_FAILURE", "Passwords do not match") # Log failure
         return templates.TemplateResponse("reset_password.html", {
             "request": request, "error": "Passwords do not match."
         }, status_code=400)
@@ -514,6 +536,7 @@ async def reset_password_submit(request: Request, new_password: str = Form(...),
     # Optional: Basic password validation
     if len(new_password) < 8:
          print(f"Password too short for user {email} during reset attempt.")
+         log_action(email, "RESET_PASSWORD_FAILURE", "Password too short") # Log failure
          return templates.TemplateResponse("reset_password.html", {
              "request": request, "error": "Password must be at least 8 characters long."
          }, status_code=400)
@@ -537,10 +560,14 @@ async def reset_password_submit(request: Request, new_password: str = Form(...),
         # Check if the update was successful
         if cursor.rowcount == 1:
             print(f"Password successfully reset for email: {email}")
+            # Update log_action call as requested
+            log_action(email, "password_reset", "User successfully reset their password")
             request.session.pop('reset_user', None)
             return RedirectResponse("/reset-password-success", status_code=302)
         else:
+            # This case is unlikely if the session key was valid, but handle it.
             print(f"Password reset failed for email: {email}. User might no longer exist.")
+            log_action(email, "RESET_PASSWORD_FAILURE", "User not found during update") # Keep failure log
             request.session.pop('reset_user', None)
             return templates.TemplateResponse("reset_password.html", {
                 "request": request, "error": "Could not update password. User may not exist.",
@@ -592,6 +619,7 @@ async def change_password_submit(
 ):
     # Check if user is logged in
     if not request.session.get("user_id"): # user_id is email
+        # No email to log here reliably
         return RedirectResponse("/login", status_code=303)
 
     email = request.session["user_id"] # Get email from session
@@ -599,6 +627,7 @@ async def change_password_submit(
     # 1. Verify current password using email
     if not verify_user(email, current_password):
         print(f"Change password failed for {email}: Incorrect current password.")
+        log_action(email, "CHANGE_PASSWORD_FAILURE", "Incorrect current password") # Log failure
         return templates.TemplateResponse("change_password.html", {
             "request": request, "error": "Current password is incorrect.", "success": None
         }, status_code=400)
@@ -606,6 +635,7 @@ async def change_password_submit(
     # 2. Check if new passwords match
     if new_password != confirm_password:
         print(f"Change password failed for {email}: New passwords do not match.")
+        log_action(email, "CHANGE_PASSWORD_FAILURE", "New passwords do not match") # Log failure
         return templates.TemplateResponse("change_password.html", {
             "request": request, "error": "New passwords do not match.", "success": None
         }, status_code=400)
@@ -613,6 +643,7 @@ async def change_password_submit(
     # 3. Optional: Basic password validation
     if len(new_password) < 8:
          print(f"Change password failed for {email}: New password too short.")
+         log_action(email, "CHANGE_PASSWORD_FAILURE", "New password too short") # Log failure
          return templates.TemplateResponse("change_password.html", {
              "request": request, "error": "New password must be at least 8 characters long.", "success": None
          }, status_code=400)
@@ -620,6 +651,7 @@ async def change_password_submit(
     # 4. Optional: Check if new password is the same as the old one
     if current_password == new_password:
         print(f"Change password failed for {email}: New password is the same as the current one.")
+        log_action(email, "CHANGE_PASSWORD_FAILURE", "New password same as current") # Log failure
         return templates.TemplateResponse("change_password.html", {
             "request": request, "error": "New password cannot be the same as the current password.", "success": None
         }, status_code=400)
@@ -644,11 +676,14 @@ async def change_password_submit(
         # Check if the update was successful
         if cursor.rowcount == 1:
             print(f"Password successfully changed for email: {email}")
+            log_action(email, "CHANGE_PASSWORD_SUCCESS") # Log success
             return templates.TemplateResponse("change_password.html", {
                 "request": request, "error": None, "success": "Password changed successfully!"
             })
         else:
+            # This case is unlikely after verification, but handle it.
             print(f"Password change failed unexpectedly for email: {email} after verification.")
+            log_action(email, "CHANGE_PASSWORD_FAILURE", "Unexpected update error") # Log failure
             return templates.TemplateResponse("change_password.html", {
                 "request": request, "error": "An unexpected error occurred during password update.", "success": None
             }, status_code=500)
@@ -718,54 +753,68 @@ async def admin_dashboard(request: Request):
 # Helper function for admin check (to avoid repetition)
 def verify_admin(request: Request):
     user_email = request.session.get("user_id")
-    if user_email != os.getenv("ADMIN_EMAIL", "r.taylor289@gmail.com"): # Use env var or default
+    admin_email_env = os.getenv("ADMIN_EMAIL", "r.taylor289@gmail.com") # Use env var or default
+    if user_email != admin_email_env:
         print(f"🚨 Unauthorized access attempt to admin action by: {user_email or 'Not logged in'}")
+        # Log unauthorized attempt if possible (might not have email if not logged in)
+        log_action(user_email or "UNKNOWN", "ADMIN_ACTION_UNAUTHORIZED", f"Attempted action on path: {request.url.path}")
         raise HTTPException(status_code=403, detail="Access denied")
     print(f"✅ Admin action authorized for: {user_email}")
     return user_email # Return email if verified
 
 @app.post("/admin/ban")
 async def ban_user(request: Request, email: str = Form(...)):
-    verify_admin(request) # Check if admin
+    admin_email = verify_admin(request) # Check if admin and get admin email
+    target_email = email # Use the form email as target_email
     if update_user_status(email, "is_banned", True):
-        print(f"✅ User '{email}' banned successfully.")
+        print(f"✅ User '{email}' banned successfully by {admin_email}.")
+        # Update log_action call as requested
+        log_action(admin_email, "ban_user", f"Banned user: {target_email}")
     else:
-        print(f"⚠️ Failed to ban user '{email}'.")
-        # Optionally add flash message or handle error differently
+        print(f"⚠️ Failed to ban user '{email}' by {admin_email}.")
+        log_action(admin_email, "ADMIN_BAN_USER_FAILURE", f"Target: {target_email}") # Keep failure log
     return RedirectResponse("/admin", status_code=302)
 
 @app.post("/admin/disable")
 async def disable_user(request: Request, email: str = Form(...)):
-    verify_admin(request) # Check if admin
+    admin_email = verify_admin(request) # Check if admin and get admin email
     if update_user_status(email, "is_disabled", True):
-         print(f"✅ User '{email}' disabled successfully.")
+         print(f"✅ User '{email}' disabled successfully by {admin_email}.")
+         log_action(admin_email, "ADMIN_DISABLE_USER", f"Target: {email}") # Log action
          # Also ensure banned status is not conflicting if needed (e.g., disable implies not banned)
          # update_user_status(email, "is_banned", False) # Optional: Ensure ban is removed if disabling
     else:
-         print(f"⚠️ Failed to disable user '{email}'.")
+         print(f"⚠️ Failed to disable user '{email}' by {admin_email}.")
+         log_action(admin_email, "ADMIN_DISABLE_USER_FAILURE", f"Target: {email}") # Log failure
     return RedirectResponse("/admin", status_code=302)
 
 @app.post("/admin/enable")
 async def enable_user(request: Request, email: str = Form(...)):
-    verify_admin(request) # Check if admin
+    admin_email = verify_admin(request) # Check if admin and get admin email
     # This correctly enables the user by setting is_disabled to False (0 in DB)
     if update_user_status(email, "is_disabled", False):
-        print(f"✅ User '{email}' enabled successfully.")
+        print(f"✅ User '{email}' enabled successfully by {admin_email}.")
+        log_action(admin_email, "ADMIN_ENABLE_USER", f"Target: {email}") # Log action
     else:
-        print(f"⚠️ Failed to enable user '{email}'.")
+        print(f"⚠️ Failed to enable user '{email}' by {admin_email}.")
+        log_action(admin_email, "ADMIN_ENABLE_USER_FAILURE", f"Target: {email}") # Log failure
     return RedirectResponse("/admin", status_code=302)
 
 # Add the unban route
 @app.post("/admin/unban")
 async def unban_user(request: Request, email: str = Form(...)):
-    verify_admin(request) # Check if admin
+    admin_email = verify_admin(request) # Check if admin and get admin email
+    target_email = email # Use the form email as target_email
     # This correctly unbans the user by setting is_banned to False (0 in DB)
     if update_user_status(email, "is_banned", False):
-        print(f"✅ User '{email}' unbanned successfully.")
+        print(f"✅ User '{email}' unbanned successfully by {admin_email}.")
+        # Update log_action call as requested
+        log_action(admin_email, "unban_user", f"Unbanned user: {target_email}")
         # Optionally, ensure user is also enabled if unbanning implies enabling
         # update_user_status(email, "is_disabled", False)
     else:
-        print(f"⚠️ Failed to unban user '{email}'.")
+        print(f"⚠️ Failed to unban user '{email}' by {admin_email}.")
+        log_action(admin_email, "ADMIN_UNBAN_USER_FAILURE", f"Target: {target_email}") # Keep failure log
     return RedirectResponse("/admin", status_code=302)
 
 # Replace the previous handle_admin_reset_password route
@@ -776,17 +825,19 @@ async def reset_user_password(
     new_password: str = Form(...)
 ):
     # --- Start: Code adapted from user prompt ---
-    # Ensure admin is logged in
-    verify_admin(request)
+    # Ensure admin is logged in and get admin email
+    admin_email = verify_admin(request)
 
     # Basic validation (optional but recommended)
     if len(new_password) < 8:
         print(f"⚠️ Admin password reset failed for '{email}': Password too short.")
+        log_action(admin_email, "ADMIN_RESET_PASSWORD_FAILURE", f"Target: {email}, Reason: Password too short") # Log failure
         # Consider adding user feedback here (e.g., flash message or query param)
         return RedirectResponse("/admin", status_code=302) # Use 302 for redirect after POST
 
     conn = None
     cursor = None
+    success = False # Flag to track success for logging
     try:
         # Hash the new password (bcrypt is imported globally)
         hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -806,6 +857,7 @@ async def reset_user_password(
 
         if cursor.rowcount > 0:
              print(f"🔐 Admin reset password for {email}")
+             success = True
         else:
              print(f"⚠️ Admin password reset: User {email} not found or DB error.")
              # Consider adding user feedback here
@@ -820,18 +872,144 @@ async def reset_user_password(
         if cursor: cursor.close()
         if conn and conn.is_connected(): conn.close()
 
+    # Log action based on success flag
+    if success:
+        log_action(admin_email, "ADMIN_RESET_PASSWORD_SUCCESS", f"Target: {email}")
+    else:
+        # Log failure if not already logged for specific validation errors
+        if len(new_password) >= 8: # Avoid double logging validation error
+            log_action(admin_email, "ADMIN_RESET_PASSWORD_FAILURE", f"Target: {email}, Reason: DB error or user not found")
+
     # Redirect back to admin page (use 302 for redirect after POST)
     return RedirectResponse("/admin", status_code=302)
     # --- End: Code adapted from user prompt ---
 
 # --- End Admin Action Routes ---
 
+# --- New Admin User Detail Route ---
+@app.get("/admin/user/{email}")
+async def view_user_details(email: str, request: Request):
+    verify_admin(request) # Use the helper function for auth
+
+    sessions = []
+    reset_attempts_count = 0
+    conn = None
+    cursor = None
+
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor(dictionary=True)
+
+        # Fetch recent session logs
+        cursor.execute("""
+            SELECT email, login_time, duration_seconds
+            FROM session_logs
+            WHERE email=%s
+            ORDER BY login_time DESC
+            LIMIT 20
+        """, (email,))
+        sessions = cursor.fetchall()
+        # Format dates for display
+        for session in sessions:
+            if session.get('login_time'):
+                session['login_time_formatted'] = session['login_time'].strftime('%Y-%m-%d %H:%M:%S UTC')
+            # Format duration
+            duration = session.get('duration_seconds', 0)
+            if duration:
+                 minutes, seconds = divmod(duration, 60)
+                 session['duration_formatted'] = f"{minutes}m {seconds}s"
+            else:
+                 session['duration_formatted'] = "N/A"
+
+
+        # Fetch password reset related activity from audit logs
+        # Counting failures and successes as an indicator
+        cursor.execute("""
+            SELECT COUNT(*) AS count
+            FROM audit_logs
+            WHERE email=%s AND action LIKE '%RESET_PASSWORD%'
+        """, (email,))
+        result = cursor.fetchone()
+        reset_attempts_count = result['count'] if result else 0
+
+    except mysql.connector.Error as err:
+        print(f"🔥 DB Error fetching user details for {email}: {err}")
+        # Handle error appropriately, maybe show an error message in the template
+        raise HTTPException(status_code=500, detail="Database error fetching user details.")
+    except Exception as e:
+        print(f"🔥 Unexpected error fetching user details for {email}: {e}")
+        raise HTTPException(status_code=500, detail="Unexpected error fetching user details.")
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
+
+    return templates.TemplateResponse("user_details.html", {
+        "request": request,
+        "email": email,
+        "sessions": sessions,
+        "reset_activity_count": reset_attempts_count # Renamed for clarity
+    })
+# --- End Admin User Detail Route ---
+
+# --- New Admin Churn Report Route ---
+@app.get("/admin/churn")
+async def churn_report(request: Request):
+    verify_admin(request) # Use the helper function for auth
+
+    churned_users = []
+    conn = None
+    cursor = None
+
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor(dictionary=True)
+        # Fetch 'churn' actions from audit logs
+        cursor.execute("""
+            SELECT email, timestamp, details
+            FROM audit_logs
+            WHERE action='churn'
+            ORDER BY timestamp DESC
+        """)
+        churned_users = cursor.fetchall()
+        # Format dates
+        for user in churned_users:
+            if user.get('timestamp'):
+                user['timestamp_formatted'] = user['timestamp'].strftime('%Y-%m-%d %H:%M:%S UTC')
+
+    except mysql.connector.Error as err:
+        print(f"🔥 DB Error fetching churn report: {err}")
+        raise HTTPException(status_code=500, detail="Database error fetching churn report.")
+    except Exception as e:
+        print(f"🔥 Unexpected error fetching churn report: {e}")
+        raise HTTPException(status_code=500, detail="Unexpected error fetching churn report.")
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
+
+    return templates.TemplateResponse("churn_report.html", {
+        "request": request,
+        "churned": churned_users
+    })
+# --- End Admin Churn Report Route ---
+
+
 # --- Export Users Route (Replacing previous implementation) ---
 
 @app.get("/admin/export-users", response_class=StreamingResponse) # Keep response_class
 async def export_users(request: Request): # Keep async and request parameter
     # Security: only allow admin (using existing verify_admin helper)
-    verify_admin(request)
+    admin_email = verify_admin(request)
+    log_action(admin_email, "ADMIN_EXPORT_USERS") # Log export action
 
     conn = None
     cursor = None

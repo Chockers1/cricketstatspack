@@ -4,6 +4,7 @@ import stripe
 import os
 import mysql.connector
 from datetime import datetime # Import datetime
+from auth_utils import log_action # Import log_action
 
 router = APIRouter()
 
@@ -173,6 +174,8 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
 
                 # Call updated function with determined type, status, and period_end
                 update_subscription(email, True, customer_id, subscription_type, status, period_end)
+                # Log subscription started after successful update
+                log_action(email, "subscription_started", f"Type: {subscription_type}, Status: {status}")
 
             except Exception as e:
                  # Catch errors during price_id extraction or type determination
@@ -181,6 +184,8 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
                  print(f"⚠️ [Webhook] Granting premium access for {email} despite error, type set to 'unknown', status/period_end set to None.")
                  # Pass None for status and period_end in the fallback
                  update_subscription(email, True, customer_id, "unknown", None, None)
+                 # Log subscription started even on fallback, noting the unknown type
+                 log_action(email, "subscription_started", "Type: unknown (fallback due to error)")
 
         else:
             # Log missing essential data more clearly
@@ -218,8 +223,10 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
 
         if email:
             # Call update_subscription with is_active=False
-            # Pass status based on event type if needed, otherwise handled in update_subscription
-            update_subscription(email, False) # Status/period_end not strictly needed for deactivation query
+            # The update_subscription function already sets status to 'canceled'
+            update_subscription(email, False)
+            # Log churn action after successful update attempt
+            log_action(email, "churn", f"Subscription cancelled (Event: {event_type})") # Changed action to 'churn'
         else:
              print(f"⚠️ [Webhook] {event_type} event received without customer_email or could not retrieve.")
 
