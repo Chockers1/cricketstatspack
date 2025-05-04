@@ -203,9 +203,12 @@ def get_admin_stats():
         "total_users": 0,
         "premium_users": 0,
         "missing_stripe_id": 0,
-        "monthly_subs": 0, # Add new keys
-        "annual_subs": 0,  # Add new keys
-        # Assuming reset count is sum of reset_attempts, not a separate table
+        "monthly_subs": 0,
+        "annual_subs": 0,
+        # Add keys for new session stats
+        "total_sessions": 0,
+        "avg_duration": 0,
+        "most_active_users": [],
     }
     users = []
     conn = None
@@ -218,9 +221,9 @@ def get_admin_stats():
             password=os.getenv("DB_PASS"),
             database=os.getenv("DB_NAME")
         )
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor(dictionary=True) # Keep dictionary=True for user list
 
-        # Get counts
+        # --- Existing User Stats ---
         cursor.execute("SELECT COUNT(*) as count FROM users")
         result = cursor.fetchone()
         if result: stats["total_users"] = result["count"]
@@ -233,7 +236,6 @@ def get_admin_stats():
         result = cursor.fetchone()
         if result: stats["missing_stripe_id"] = result["count"]
 
-        # Add subscription type counts
         cursor.execute("SELECT COUNT(*) as count FROM users WHERE subscription_type = 'monthly'")
         result = cursor.fetchone()
         if result: stats["monthly_subs"] = result["count"]
@@ -242,7 +244,39 @@ def get_admin_stats():
         result = cursor.fetchone()
         if result: stats["annual_subs"] = result["count"]
 
-        # Get user details - Add is_disabled and is_banned
+        # --- New Session Stats ---
+        # Use a standard cursor (or fetch specific columns) for session stats if dictionary=True causes issues
+        # Re-creating cursor without dictionary=True for session stats
+        if cursor: cursor.close()
+        cursor = conn.cursor() # Standard cursor for session stats
+
+        cursor.execute("SELECT COUNT(*) FROM session_logs")
+        result = cursor.fetchone()
+        stats["total_sessions"] = result[0] if result else 0
+
+        cursor.execute("SELECT AVG(duration_seconds) FROM session_logs")
+        result = cursor.fetchone()
+        # Handle potential None if table is empty, round the average
+        stats["avg_duration"] = round(result[0] or 0)
+
+        # Fetch most active users (returns list of tuples: (email, count))
+        cursor.execute("""
+            SELECT email, COUNT(*) AS count
+            FROM session_logs
+            WHERE email IS NOT NULL  /* Exclude null emails if necessary */
+            GROUP BY email
+            ORDER BY count DESC
+            LIMIT 5
+        """)
+        # Convert list of tuples to list of dicts for easier template access
+        most_active_raw = cursor.fetchall()
+        stats["most_active_users"] = [{"email": email, "count": count} for email, count in most_active_raw]
+
+        # Re-create dictionary cursor for fetching user details
+        if cursor: cursor.close()
+        cursor = conn.cursor(dictionary=True)
+
+        # --- Get User Details (Existing) ---
         cursor.execute("""
             SELECT email, created_at, is_premium, stripe_customer_id, reset_attempts,
                    subscription_type, subscription_status, current_period_end,
@@ -252,15 +286,15 @@ def get_admin_stats():
         """)
         users = cursor.fetchall()
 
-        # Format created_at and current_period_end for better display if needed (optional)
+        # Format dates (Existing)
         for user in users:
+            # ... existing date formatting ...
             if user.get('created_at'):
                  user['created_at_formatted'] = user['created_at'].strftime('%Y-%m-%d %H:%M')
-            # Format period end if it exists
             if user.get('current_period_end'):
                  user['current_period_end_formatted'] = user['current_period_end'].strftime('%Y-%m-%d')
             else:
-                 user['current_period_end_formatted'] = 'N/A' # Or None, or empty string
+                 user['current_period_end_formatted'] = 'N/A'
 
 
     except mysql.connector.Error as err:
@@ -270,14 +304,15 @@ def get_admin_stats():
         users = []
     except Exception as e:
         print(f"🔥 Admin Stats Unexpected Error: {e}")
-        stats = {k: 'Error' for k in stats} # Ensure stats is assigned in this case too
-        users = [] # Ensure users is assigned in this case too
+        stats = {k: 'Error' for k in stats}
+        users = []
     finally:
         if cursor:
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
 
+    # Return updated stats dictionary and users list
     return stats, users
 
 # --- End Admin Functions ---

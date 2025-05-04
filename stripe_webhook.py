@@ -80,8 +80,15 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
         print(f"Webhook error: Invalid payload - {e}")
         raise HTTPException(status_code=400, detail="Invalid payload")
     except stripe.error.SignatureVerificationError as e:
-        # Invalid signature
-        print(f"Webhook error: Invalid signature - {e}")
+        # Invalid signature - Add detailed logging
+        print(f"🚫 Invalid Stripe signature! Details: {e}")
+        print(f"🔐 Header received: {stripe_signature}")
+        # Decode payload for logging and truncate to avoid excessive output
+        try:
+            payload_str = payload.decode('utf-8')
+            print(f"📦 Payload received (truncated): {payload_str[:300]}...")
+        except UnicodeDecodeError:
+            print("📦 Payload received (could not decode as UTF-8).")
         raise HTTPException(status_code=400, detail="Invalid signature")
     except Exception as e:
         print(f"Webhook error: Unexpected error constructing event - {e}")

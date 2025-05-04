@@ -1,16 +1,25 @@
 import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Form, Depends, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+# Add JSONResponse import
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
+# Add BaseHTTPMiddleware import
+from starlette.middleware.base import BaseHTTPMiddleware
 from datetime import datetime # Remove timedelta if not used elsewhere
 import mysql.connector
 import bcrypt # Ensure bcrypt is imported
 from typing import Optional # Import Optional for optional form fields
 import csv
 from io import StringIO
+# Add slowapi imports
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+# Import limiter decorator specifically if needed (or use app.state.limiter)
+# from slowapi.decorator import limiter # Not strictly needed if using app.state.limiter
 
 
 # Import the new admin function, status update function, and reset function
@@ -22,8 +31,70 @@ print("🔥 FASTAPI LOADED 🔥")
 
 load_dotenv()  # loads .env into os.environ
 
-# SECRET_KEY = os.getenv("SECRET_KEY", "replace-this-with-a-real-secret") # Remove this line
+# Define PageViewLoggerMiddleware
+class PageViewLoggerMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # Process the request first to get the response
+        response = await call_next(request)
+
+        # Log page view after the request is processed
+        try:
+            path = request.url.path
+            ip = request.client.host if request.client else "unknown" # Handle cases where client might be None
+            session = request.session
+            # Use 'user_id' as the session key for email, consistent with the rest of the app
+            email = session.get("user_id")
+
+            # Avoid logging static file requests or webhook requests if desired
+            if path.startswith("/static") or path == "/api/webhook":
+                 return response
+
+            conn = None
+            cursor = None
+            try:
+                conn = mysql.connector.connect(
+                    host=os.getenv("DB_HOST"),
+                    user=os.getenv("DB_USER"),
+                    password=os.getenv("DB_PASS"),
+                    database=os.getenv("DB_NAME")
+                )
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO page_views (email, path, ip_address, timestamp) VALUES (%s, %s, %s, %s)",
+                    # Add timestamp
+                    (email, path, ip, datetime.now())
+                )
+                conn.commit()
+            except mysql.connector.Error as db_err:
+                 print(f"⚠️ DB Error logging page view: {db_err}")
+            except Exception as inner_e:
+                 print(f"⚠️ Inner Exception logging page view: {inner_e}")
+            finally:
+                if cursor: cursor.close()
+                if conn and conn.is_connected(): conn.close()
+
+        except Exception as e:
+            # Catch potential errors accessing request/session attributes
+            print(f"⚠️ Failed to log page view (Outer Exception): {e}")
+
+        return response
+
+# Initialize Limiter
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI()
+# Attach Limiter to App State
+app.state.limiter = limiter
+
+# Add Rate Limit Exceeded Exception Handler
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": f"Rate limit exceeded: {exc.detail}"} # Include detail from exception
+    )
+
+# SECRET_KEY = os.getenv("SECRET_KEY", "replace-this-with-a-real-secret") # Remove this line
 
 # Add Session Middleware:
 # app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY) # Remove this line
@@ -35,6 +106,9 @@ if not SECRET_KEY:
 
 # install the middleware
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
+
+# Add Page View Logger Middleware (after SessionMiddleware to access session)
+app.add_middleware(PageViewLoggerMiddleware)
 
 # Include the Stripe payments router
 app.include_router(stripe_payments_router) # Add this line
@@ -63,6 +137,7 @@ async def login_form(request: Request):
 
 # ✅ Single, correct POST route for login (Updated for session and email)
 @app.post("/login")
+@limiter.limit("5/minute") # Apply rate limiting
 async def login_submit(request: Request, email: str = Form(...), password: str = Form(...)): # Changed username to email
     print("🚨 Login POST received")
     # Use email for verification
@@ -70,6 +145,8 @@ async def login_submit(request: Request, email: str = Form(...), password: str =
         print(f"✅ Login success for {email} — redirecting to dashboard")
         # Store email identifier in session
         request.session["user_id"] = email # Store email as user_id
+        # Store login time in session
+        request.session["login_time"] = datetime.utcnow().isoformat()
         response = RedirectResponse(url="/dashboard", status_code=302)
         return response
     else:
@@ -218,6 +295,49 @@ async def dashboard(request: Request):
 # Copilot: add logout endpoint (Updated for session)
 @app.get("/logout")
 async def logout(request: Request):
+    # --- Add Session Duration Logging ---
+    email = request.session.get("user_id") # Use 'user_id' key
+    login_time_str = request.session.get("login_time")
+
+    if email and login_time_str:
+        try:
+            login_dt = datetime.fromisoformat(login_time_str)
+            logout_dt = datetime.utcnow()
+            duration = int((logout_dt - login_dt).total_seconds())
+
+            # Log to database
+            conn = None
+            cursor = None
+            try:
+                conn = mysql.connector.connect(
+                    host=os.getenv("DB_HOST"),
+                    user=os.getenv("DB_USER"),
+                    password=os.getenv("DB_PASS"),
+                    database=os.getenv("DB_NAME")
+                )
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO session_logs (email, login_time, logout_time, duration_seconds) VALUES (%s, %s, %s, %s)",
+                    (email, login_dt, logout_dt, duration)
+                )
+                conn.commit()
+                print(f"✅ Logged session duration for {email}: {duration} seconds.")
+            except mysql.connector.Error as db_err:
+                print(f"❌ DB Error logging session duration for {email}: {db_err}")
+            except Exception as log_e:
+                print(f"❌ Failed to log session duration for {email}: {log_e}")
+            finally:
+                if cursor: cursor.close()
+                if conn and conn.is_connected(): conn.close()
+
+        except ValueError:
+            print(f"⚠️ Could not parse login_time '{login_time_str}' for user {email}.")
+        except Exception as outer_e:
+             print(f"❌ Unexpected error during session duration calculation for {email}: {outer_e}")
+    else:
+        print("ℹ️ Logout initiated but no email or login_time found in session to log duration.")
+    # --- End Session Duration Logging ---
+
     # Clear the session
     request.session.clear()
     response = RedirectResponse(url="/", status_code=302)
@@ -574,18 +694,19 @@ async def admin_dashboard(request: Request):
     # Check session for user_id (which holds the email)
     user_email = request.session.get("user_id")
     # Simple check against a hardcoded admin email
-    if user_email != "r.taylor289@gmail.com":
+    if user_email != "r.taylor289@gmail.com": # Consider using os.getenv("ADMIN_EMAIL") here too
         print(f"🚨 Unauthorized access attempt to /admin by: {user_email or 'Not logged in'}")
         raise HTTPException(status_code=403, detail="Access denied")
 
     print(f"✅ Admin access granted to: {user_email}")
-    # Fetch stats and user data
+    # Fetch stats and user data (get_admin_stats now includes session stats)
     stats, users = get_admin_stats()
 
-    # Render the admin template
+    # Render the admin template, passing the entire stats dictionary
+    # The 'stats' dictionary already contains total_sessions, avg_duration, and most_active_users
     return templates.TemplateResponse("admin_dashboard.html", {
         "request": request,
-        "stats": stats,
+        "stats": stats, # This dictionary includes the new session stats
         "users": users
     })
 

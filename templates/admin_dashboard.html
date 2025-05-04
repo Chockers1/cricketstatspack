@@ -191,6 +191,19 @@
         background-color: #d3d6d8;
     }
 
+    /* Add styles for the new session stats section if needed */
+    .session-stats-card {
+        margin-top: 2rem; /* Add space above the session stats */
+    }
+    .session-stats-card h3 {
+        font-size: 1.25rem;
+        margin-bottom: 1rem;
+        color: #4b4f56;
+    }
+    .session-stats-card table {
+        margin-top: 0.5rem; /* Reduce margin if inside card */
+    }
+
   </style>
 </head>
 <body>
@@ -228,8 +241,41 @@
             <span class="label">Missing Stripe ID</span>
             <span class="value">{{ stats.missing_stripe_id }}</span>
         </div>
-        {# Add more stats here if needed #}
+        {# Add Session Stats to the grid #}
+        <div class="stat-item">
+            <span class="label">Total Sessions</span>
+            <span class="value">{{ stats.total_sessions }}</span>
+        </div>
+        <div class="stat-item">
+            <span class="label">Avg Duration (s)</span>
+            <span class="value">{{ stats.avg_duration }}</span>
+        </div>
       </div>
+    </div>
+
+    {# Add New Card for Most Active Users #}
+    <div class="card session-stats-card">
+      <h3>Session Activity</h3>
+      <h4>Most Active Users (Top 5)</h4>
+      <table>
+          <thead>
+              <tr><th>Email</th><th>Sessions Logged</th></tr>
+          </thead>
+          <tbody>
+              {% if stats.most_active_users %}
+                  {% for user_activity in stats.most_active_users %}
+                  <tr>
+                      <td>{{ user_activity.email }}</td> {# Access by key 'email' #}
+                      <td>{{ user_activity.count }}</td> {# Access by key 'count' #}
+                  </tr>
+                  {% endfor %}
+              {% else %}
+                  <tr>
+                      <td colspan="2">No session data available.</td>
+                  </tr>
+              {% endif %}
+          </tbody>
+      </table>
     </div>
 
     <div class="card">
