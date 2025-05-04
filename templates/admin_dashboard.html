@@ -171,18 +171,23 @@
     form[action="/admin/unban"] button { background-color: #ffecb3; border-color: #ffe082; color: #664d03; }
     form[action="/admin/unban"] button:hover { background-color: #ffe082; }
 
-    /* Style for Export button */
-    form[action="/admin/export-subscribers"] {
+    /* Style for Export link/button */
+    a[href="/admin/export-users"] {
+        display: inline-block; /* Allow margin */
         margin-bottom: 1.5rem; /* Add some space below the button */
+        text-decoration: none; /* Remove underline from link */
     }
-    form[action="/admin/export-subscribers"] button {
+    a[href="/admin/export-users"] button {
         background-color: #e2e3e5; /* Light grey */
-        border-color: #d3d6d8;
+        border: 1px solid #d3d6d8; /* Match border color */
         color: #41464b;
         padding: 0.5rem 1rem; /* Slightly larger padding */
         font-size: 0.9rem;
+        border-radius: 4px; /* Add border-radius */
+        cursor: pointer; /* Ensure cursor changes */
+        transition: background-color 0.2s ease; /* Add transition */
     }
-    form[action="/admin/export-subscribers"] button:hover {
+    a[href="/admin/export-users"] button:hover {
         background-color: #d3d6d8;
     }
 
@@ -195,10 +200,10 @@
     </div>
     <h1>Admin Dashboard</h1>
 
-    {# Add Export Button Form Here #}
-    <form method="get" action="/admin/export-subscribers">
-        <button type="submit">📤 Export Subscribers (CSV)</button>
-    </form>
+    {# Replace Export Button Form with Link containing Button #}
+    <a href="/admin/export-users">
+        <button>Download All Users CSV</button> {# Updated text #}
+    </a>
 
     <div class="card">
       <h2>Statistics</h2>
