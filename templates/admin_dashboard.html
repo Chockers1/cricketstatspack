@@ -191,6 +191,27 @@
         background-color: #d3d6d8;
     }
 
+    /* Style for Churn Report link/button */
+    a[href="/admin/churn"] {
+        display: inline-block; /* Allow margin */
+        margin-bottom: 1.5rem; /* Add some space below the button */
+        margin-left: 10px; /* Add space between buttons */
+        text-decoration: none; /* Remove underline from link */
+    }
+    a[href="/admin/churn"] button {
+        background-color: #f8d7da; /* Light red */
+        border: 1px solid #f5c6cb; /* Match border color */
+        color: #721c24; /* Dark red text */
+        padding: 0.5rem 1rem; /* Slightly larger padding */
+        font-size: 0.9rem;
+        border-radius: 4px; /* Add border-radius */
+        cursor: pointer; /* Ensure cursor changes */
+        transition: background-color 0.2s ease; /* Add transition */
+    }
+    a[href="/admin/churn"] button:hover {
+        background-color: #f1b0b7;
+    }
+
     /* Add styles for the new session stats section if needed */
     .session-stats-card {
         margin-top: 2rem; /* Add space above the session stats */
@@ -213,10 +234,17 @@
     </div>
     <h1>Admin Dashboard</h1>
 
-    {# Replace Export Button Form with Link containing Button #}
-    <a href="/admin/export-users">
-        <button>Download All Users CSV</button> {# Updated text #}
-    </a>
+    {# Container for Admin Buttons #}
+    <div class="admin-buttons" style="margin-bottom: 1.5rem;">
+        {# Export Button Link #}
+        <a href="/admin/export-users">
+            <button>Download All Users CSV</button>
+        </a>
+        {# Churn Report Button Link #}
+        <a href="/admin/churn">
+            <button>📉 View Churn Report</button>
+        </a>
+    </div>
 
     <div class="card">
       <h2>Statistics</h2>
@@ -331,6 +359,9 @@
                   {% endif %}
                 </td>
                 <td> {# Actions Column #}
+                  {# Add link to user details page #}
+                  <a href="/admin/user/{{ user.email }}" style="margin-right: 5px; font-size: 0.8rem; text-decoration: none;" title="View Details">🔍</a>
+
                   {% if not user.is_banned %}
                     <form method="post" action="/admin/ban" style="display: inline;">
                       <input type="hidden" name="email" value="{{ user.email }}">
