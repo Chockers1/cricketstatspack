@@ -1260,7 +1260,8 @@ async def profile(request: Request):
             if customer_id_for_upcoming_inv and user_db_data.get("subscription_status") == 'active': # Only for active subs
                 try:
                     print(f"[DEBUG /profile] Attempting to fetch upcoming invoice for customer {customer_id_for_upcoming_inv} (from DB data path)")
-                    inv = stripe.Invoice.upcoming(customer=customer_id_for_upcoming_inv)
+                    # Corrected Stripe API call
+                    inv = stripe.Invoice.retrieve_upcoming(customer=customer_id_for_upcoming_inv)
                     renewal_timestamp = inv.next_payment_attempt or inv.period_end
                     print(f"[DEBUG /profile] Upcoming invoice renewal: {renewal_timestamp}")
                 except stripe.error.InvalidRequestError:
@@ -1337,7 +1338,7 @@ async def profile(request: Request):
                                 stripe_customer_id_to_try = customer_id_from_email # Update the ID we might use for self-heal
                                 break
                         if live_sub_object:
-                            print(f"[DEBUG /profile] Live Check (Attempt B): Found '{live_sub_object.status}' subscription with email-looked-up customer_id.")
+                            print(f"[DEBUG /profile] Live Check (Attempt B): Found '{sub_item_b.status}' subscription with email-looked-up customer_id.")
                         else:
                             print(f"[DEBUG /profile] Live Check (Attempt B): No 'active' or 'trialing' subscription found using email-looked-up customer_id: {customer_id_from_email}")
                     else:
@@ -1370,7 +1371,8 @@ async def profile(request: Request):
                 if stripe_customer_id_from_sub and sub.status == 'active': # Only for active subscriptions
                     try:
                         print(f"[DEBUG /profile] Attempting to fetch upcoming invoice for customer {stripe_customer_id_from_sub} (from live sub path)")
-                        inv = stripe.Invoice.upcoming(customer=stripe_customer_id_from_sub)
+                        # Corrected Stripe API call
+                        inv = stripe.Invoice.retrieve_upcoming(customer=stripe_customer_id_from_sub)
                         renewal_date_for_details = inv.next_payment_attempt or inv.period_end
                         print(f"[DEBUG /profile] Upcoming invoice renewal (live sub path): {renewal_date_for_details}")
                     except stripe.error.InvalidRequestError:
