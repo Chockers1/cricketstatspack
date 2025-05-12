@@ -128,7 +128,9 @@ async def root(request: Request):
     logger.info("Root path ('/') accessed.")
     try:
         if request.session:
-            logger.debug(f"Session data on root access: {key: type(value) for key, value in request.session.items()}")
+            # Corrected session logging to avoid NameError
+            session_data_summary = {k: type(v).__name__ for k, v in request.session.items()}
+            logger.debug(f"Session data on root access: {session_data_summary}")
         else:
             logger.debug("No session data on root access.")
         
@@ -918,7 +920,7 @@ async def view_user_details(email: str, request: Request):
             user_details['current_period_end_formatted'] = user_details['current_period_end'].strftime('%Y-%m-%d')
         else:
             user_details['current_period_end_formatted'] = 'N/A'
-        if user_details.get('lock_until'):
+        if user_details.get('lock_until')):
             user_details['lock_until_formatted'] = user_details['lock_until'].strftime('%Y-%m-%d %H:%M:%S UTC')
         else:
              user_details['lock_until_formatted'] = 'N/A'
@@ -1154,5 +1156,5 @@ async def stripe_webhook(request: Request):
     except Exception as e:
         logger.error(f"Error handling Stripe event type {event.type if event else 'UNKNOWN'}: {e}", exc_info=True)
         # Return 500 so Stripe retries, but be cautious about retry storms for non-recoverable errors.
-        return HTTPException(status_code=500, detail="Error processing webhook event.")
+        return HTTPException(status_code=500, detail="Error processing webhook event")
 
