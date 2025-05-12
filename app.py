@@ -920,7 +920,7 @@ async def view_user_details(email: str, request: Request):
             user_details['current_period_end_formatted'] = user_details['current_period_end'].strftime('%Y-%m-%d')
         else:
             user_details['current_period_end_formatted'] = 'N/A'
-        if user_details.get('lock_until')):
+        if user_details.get('lock_until'):
             user_details['lock_until_formatted'] = user_details['lock_until'].strftime('%Y-%m-%d %H:%M:%S UTC')
         else:
              user_details['lock_until_formatted'] = 'N/A'
