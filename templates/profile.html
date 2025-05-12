@@ -6,7 +6,13 @@
 
   {% if subscription %}
     <p><strong>Subscription Plan:</strong> {{ subscription.plan }}</p>
-    <p><strong>Status:</strong> <span class="status-{{ subscription.status | lower }}">{{ subscription.status | capitalize }}</span></p>
+    <p>
+      <strong>Status:</strong>
+      <span class="status-{{ subscription.status | lower }}">
+        {{ subscription.status | capitalize }}
+      </span>
+    </p>
+
     {% if subscription.status == 'active' or subscription.status == 'trialing' %}
       <p>
         <strong>Next Billing Date:</strong>
@@ -22,21 +28,32 @@
     {% elif subscription.status == 'unpaid' %}
       <p><strong>Status:</strong> Your subscription is unpaid and inactive.</p>
     {% endif %}
+
     <!-- Link to Stripe Customer Portal -->
-    <p><a href="/manage-subscription" class="btn btn-info">Manage Billing & Subscription</a></p>
+    <p><a href="/manage-subscription" class="btn btn-info">Manage Billing &amp; Subscription</a></p>
+
   {% else %}
     <p><em>You don’t have an active subscription.</em></p>
-    <p><a href="{{ url_for('subscribe_page') }}" class="btn btn-primary">Subscribe Now</a></p>
+    <p>
+      <a href="{{ request.url_for('subscribe_page') }}" class="btn btn-primary">
+        Subscribe Now
+      </a>
+    </p>
   {% endif %}
 
   <hr>
-  <p><a href="{{ url_for('change_password_form') }}">🔐 Change Password</a></p>
+
+  <p>
+    <a href="{{ request.url_for('change_password_form') }}">
+      🔐 Change Password
+    </a>
+  </p>
 
   <style>
-    .status-active { color: green; font-weight: bold; }
-    .status-trialing { color: blue; font-weight: bold; }
-    .status-canceled { color: orange; font-weight: bold; }
-    .status-past_due { color: red; font-weight: bold; }
-    .status-unpaid { color: darkred; font-weight: bold; }
+    .status-active   { color: green;   font-weight: bold; }
+    .status-trialing { color: blue;    font-weight: bold; }
+    .status-canceled { color: orange;  font-weight: bold; }
+    .status-past_due { color: red;     font-weight: bold; }
+    .status-unpaid   { color: darkred; font-weight: bold; }
   </style>
 {% endblock %}

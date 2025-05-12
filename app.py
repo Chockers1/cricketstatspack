@@ -1372,7 +1372,7 @@ async def profile(request: Request):
                     try:
                         print(f"[DEBUG /profile] Attempting to fetch upcoming invoice for customer {stripe_customer_id_from_sub} (from live sub path)")
                         # Corrected Stripe API call
-                        inv = stripe.Invoice.retrieve_upcoming(customer=stripe_customer_id_from_sub)
+                        inv = stripe.Invoice.upcoming(customer=stripe_customer_id_from_sub)
                         renewal_date_for_details = inv.next_payment_attempt or inv.period_end
                         print(f"[DEBUG /profile] Upcoming invoice renewal (live sub path): {renewal_date_for_details}")
                     except stripe.error.InvalidRequestError:
