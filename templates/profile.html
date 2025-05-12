@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+
 {% block content %}
   <h1>My Profile</h1>
 
@@ -13,7 +14,7 @@
       </span>
     </p>
 
-    {% if subscription.status == 'active' or subscription.status == 'trialing' %}
+    {% if subscription.status in ['active', 'trialing'] %}
       <p>
         <strong>Next Billing Date:</strong>
         {{ subscription.renewal | datetimeformat }}
@@ -24,14 +25,16 @@
         {{ subscription.renewal | datetimeformat }}
       </p>
     {% elif subscription.status == 'past_due' %}
-      <p><strong>Status:</strong> Your payment is past due. Please update your payment method.</p>
+      <p><strong>Attention:</strong> Your payment is past due. Please update your method.</p>
     {% elif subscription.status == 'unpaid' %}
-      <p><strong>Status:</strong> Your subscription is unpaid and inactive.</p>
+      <p><strong>Notice:</strong> Your subscription is unpaid and inactive.</p>
     {% endif %}
 
-    <!-- Link to Stripe Customer Portal -->
-    <p><a href="/manage-subscription" class="btn btn-info">Manage Billing &amp; Subscription</a></p>
-
+    <p>
+      <a href="/manage-subscription" class="btn btn-info">
+        Manage Billing &amp; Subscription
+      </a>
+    </p>
   {% else %}
     <p><em>You don’t have an active subscription.</em></p>
     <p>
@@ -55,5 +58,14 @@
     .status-canceled { color: orange;  font-weight: bold; }
     .status-past_due { color: red;     font-weight: bold; }
     .status-unpaid   { color: darkred; font-weight: bold; }
+    .btn {
+      display: inline-block;
+      padding: 0.5em 1em;
+      border-radius: 4px;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .btn-primary { background-color: #007bff; color: white; }
+    .btn-info    { background-color: #17a2b8; color: white; }
   </style>
 {% endblock %}
