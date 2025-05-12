@@ -23,7 +23,7 @@
       <p><strong>Status:</strong> Your subscription is unpaid and inactive.</p>
     {% endif %}
     <!-- Link to Stripe Customer Portal -->
-    <p><a href="{{ url_for('create_portal_session') }}" class="btn btn-info">Manage Billing & Subscription</a></p>
+    <p><a href="/manage-subscription" class="btn btn-info">Manage Billing & Subscription</a></p>
   {% else %}
     <p><em>You don’t have an active subscription.</em></p>
     <p><a href="{{ url_for('subscribe_page') }}" class="btn btn-primary">Subscribe Now</a></p>
