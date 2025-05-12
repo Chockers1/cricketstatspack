@@ -1,11 +1,40 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>{% block title %}Cricket Stats Pack{% endblock %}</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My App</title>
+    <!-- Add any global CSS/JS links here -->
+    <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
 </head>
 <body>
+    <header>
+        <nav>
+            <a href="{{ url_for('root') }}">Home</a> |
+            {% if request.session.user_id %}
+                <a href="{{ url_for('dashboard') }}">Dashboard</a> |
+                <a href="{{ url_for('profile') }}">Profile</a> |
+                {% if not request.session.is_premium %}
+                    <a href="{{ url_for('subscribe_page') }}">Subscribe</a> |
+                {% endif %}
+                <a href="{{ url_for('change_password_form') }}">Change Password</a> |
+                <a href="{{ url_for('logout') }}">Log out</a>
+            {% else %}
+                <a href="{{ url_for('login_form') }}">Login</a> |
+                <a href="{{ url_for('register_form') }}">Register</a>
+            {% endif %}
+            {% if request.session.user_id == "r.taylor289@gmail.com" or request.session.user_id == os.getenv("ADMIN_EMAIL") %}
+                | <a href="{{ url_for('admin_dashboard') }}">Admin</a>
+            {% endif %}
+        </nav>
+    </header>
+    <hr>
     <main>
-        {% block content %}{% endblock %}
+        {% block content %}
+        {% endblock %}
     </main>
+    <footer>
+        <!-- Footer content -->
+    </footer>
 </body>
 </html>
