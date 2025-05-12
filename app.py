@@ -1158,7 +1158,7 @@ async def export_users(request: Request): # Keep async and request parameter
         raise HTTPException(status_code=500, detail="Database error during export.")
     except Exception as e:
         print(f"🔥 Unexpected error during user export: {e}")
-        raise HTTPException(status_code=500, detail="Unexpected error during export.")
+        raise HTTPException(status_code=500, detail="Unexpected error during user export.")
     finally:
         if cursor: cursor.close()
         if conn and conn.is_connected(): conn.close()
@@ -1216,10 +1216,11 @@ async def profile(request: Request):
         return RedirectResponse("/login", status_code=303)
 
     subscription_details = None
-    stripe_customer_id = None
+    db_stripe_customer_id = None
     conn = None
     cursor = None
 
+    # 1. Fetch stripe_customer_id from DB
     try:
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"),
@@ -1231,38 +1232,104 @@ async def profile(request: Request):
         cursor.execute("SELECT stripe_customer_id FROM users WHERE email = %s", (user_email,))
         user_db_data = cursor.fetchone()
         if user_db_data:
-            stripe_customer_id = user_db_data.get("stripe_customer_id")
-
+            db_stripe_customer_id = user_db_data.get("stripe_customer_id")
+        print(f"[DEBUG /profile] Fetched db_stripe_customer_id: {db_stripe_customer_id} for email: {user_email}")
     except mysql.connector.Error as db_err:
         print(f"⚠️ DB Error fetching stripe_customer_id for {user_email}: {db_err}")
-        # Optionally, you could show an error on the profile page or handle differently
     finally:
         if cursor: cursor.close()
         if conn and conn.is_connected(): conn.close()
 
-    if stripe_customer_id:
+    customer_id_to_use = db_stripe_customer_id
+    
+    # Attempt to find and use a valid customer ID (from DB or email fallback)
+    # This loop structure allows trying DB ID first, then email lookup if needed.
+    for attempt_num in range(2): # 0: use db_stripe_customer_id, 1: fallback to email lookup
+        current_customer_id_source = "DB"
+        if attempt_num == 1: # Fallback to email lookup
+            current_customer_id_source = "Stripe Email Lookup"
+            if subscription_details: # Already found a subscription with DB ID
+                break
+            
+            print(f"[DEBUG /profile] Attempting Stripe customer lookup by email: {user_email}")
+            try:
+                custs_response = stripe.Customer.list(email=user_email, limit=1)
+                if custs_response and custs_response.data:
+                    customer_id_from_email = custs_response.data[0].id
+                    if customer_id_from_email != customer_id_to_use: # If different from (possibly None) DB ID
+                        print(f"[DEBUG /profile] Found Stripe customer by email. New customer_id_to_use: {customer_id_from_email}")
+                        if db_stripe_customer_id and db_stripe_customer_id != customer_id_from_email:
+                            print(f"⚠️ Stale stripe_customer_id in DB ('{db_stripe_customer_id}') vs Stripe email lookup ('{customer_id_from_email}') for {user_email}")
+                        customer_id_to_use = customer_id_from_email
+                    elif not customer_id_to_use: # DB ID was None, now using email lookup ID
+                         customer_id_to_use = customer_id_from_email
+                         print(f"[DEBUG /profile] Using customer_id from email lookup: {customer_id_to_use} as DB ID was None.")
+                else:
+                    print(f"[DEBUG /profile] No Stripe customer found by email: {user_email}")
+                    customer_id_to_use = None # Reset if email lookup fails and DB ID was also None or failed
+            except stripe.error.StripeError as e:
+                print(f"⚠️ Stripe API Error looking up customer by email {user_email}: {e}")
+                customer_id_to_use = None
+            except Exception as e:
+                print(f"⚠️ Unexpected error looking up customer by email {user_email}: {e}")
+                customer_id_to_use = None
+
+        if not customer_id_to_use:
+            if attempt_num == 0: # DB ID was None or failed, loop will continue to email fallback
+                print(f"[DEBUG /profile] No valid customer_id from DB ('{db_stripe_customer_id}'). Will attempt email fallback.")
+                continue 
+            else: # Email fallback also failed to yield a customer_id
+                print(f"[DEBUG /profile] No customer_id found after DB and email fallback for {user_email}.")
+                break # Exit loop, no customer_id to use
+
+        # Fetch subscriptions if we have a customer_id_to_use
+        print(f"[DEBUG /profile] Using customer_id: {customer_id_to_use} (Source: {current_customer_id_source}) to fetch subscriptions.")
         try:
-            # List subscriptions for the customer, limit to 1 (usually the most recent/active)
-            subscriptions = stripe.Subscription.list(customer=stripe_customer_id, limit=1, status='all') # Fetch all statuses
-            if subscriptions and subscriptions.data:
-                sub = subscriptions.data[0]
-                # Get price details (nickname or ID)
-                plan_nickname = "N/A"
-                if sub.items and sub.items.data:
-                    price = sub.items.data[0].price
-                    plan_nickname = price.nickname if price.nickname else price.id
+            subscriptions_response = stripe.Subscription.list(customer=customer_id_to_use, status='all')
+            # print(f"[DEBUG /profile] Stripe subscriptions_response for {customer_id_to_use}: {subscriptions_response!r}") # Can be very verbose
 
-                subscription_details = {
-                    "plan": plan_nickname,
-                    "status": sub.status,
-                    "renewal": sub.current_period_end  # This is a Unix timestamp
-                }
+            if subscriptions_response and subscriptions_response.data:
+                relevant_sub_found = None
+                # Prioritize 'active', then 'trialing' from the list (Stripe returns newest first)
+                for sub_item in subscriptions_response.data:
+                    if sub_item.status == 'active':
+                        relevant_sub_found = sub_item
+                        break
+                if not relevant_sub_found:
+                    for sub_item in subscriptions_response.data:
+                        if sub_item.status == 'trialing':
+                            relevant_sub_found = sub_item
+                            break
+                
+                if relevant_sub_found:
+                    sub = relevant_sub_found
+                    plan_nickname = "N/A"
+                    if sub.items and sub.items.data and sub.items.data[0].price:
+                        price_obj = sub.items.data[0].price
+                        plan_nickname = price_obj.nickname if price_obj.nickname else price_obj.id
+                    
+                    subscription_details = {
+                        "plan": plan_nickname,
+                        "status": sub.status,
+                        "renewal": sub.current_period_end 
+                    }
+                    print(f"[DEBUG /profile] Populated subscription_details: {subscription_details} from customer {customer_id_to_use}")
+                    break # Found a relevant subscription, exit the attempt loop
+                else:
+                    print(f"[DEBUG /profile] No 'active' or 'trialing' subscription found in list for customer {customer_id_to_use}")
+            else:
+                print(f"[DEBUG /profile] No subscriptions data returned by Stripe for customer {customer_id_to_use}")
+        
         except stripe.error.StripeError as e:
-            print(f"⚠️ Stripe API Error fetching subscription for customer {stripe_customer_id}: {e}")
-            # Handle Stripe API errors (e.g., log, show generic message to user)
+            print(f"⚠️ Stripe API Error fetching subscription list for customer {customer_id_to_use}: {e}")
         except Exception as e:
-            print(f"⚠️ Unexpected error fetching subscription details for {user_email}: {e}")
+            print(f"⚠️ Unexpected error fetching subscription list for {user_email}, customer_id {customer_id_to_use}: {e}")
+        
+        if subscription_details: # If found in this attempt, no need for further attempts.
+            break
 
+    if not subscription_details:
+        print(f"[INFO /profile] Final: No active/trialing subscription details found for {user_email} to display. 'subscription_details' remains None.")
 
     return templates.TemplateResponse("profile.html", {
         "request": request,
@@ -1271,4 +1338,3 @@ async def profile(request: Request):
     })
 
 # --- End Profile Page Route ---
-
