@@ -1254,7 +1254,34 @@ async def profile(request: Request):
             
             print(f"[INFO /profile] DB indicates active/trialing premium subscription for {user_email}. Using DB data for display.")
             renewal_timestamp = None
-            if user_db_data.get("current_period_end"):
+            # Try to get upcoming invoice for more accurate renewal if customer_id exists
+            customer_id_for_upcoming_inv = user_db_data.get("stripe_customer_id")
+            
+            if customer_id_for_upcoming_inv and user_db_data.get("subscription_status") == 'active': # Only for active subs
+                try:
+                    print(f"[DEBUG /profile] Attempting to fetch upcoming invoice for customer {customer_id_for_upcoming_inv} (from DB data path)")
+                    inv = stripe.Invoice.upcoming(customer=customer_id_for_upcoming_inv)
+                    renewal_timestamp = inv.next_payment_attempt or inv.period_end
+                    print(f"[DEBUG /profile] Upcoming invoice renewal: {renewal_timestamp}")
+                except stripe.error.InvalidRequestError:
+                    print(f"[INFO /profile] No upcoming invoice found for customer {customer_id_for_upcoming_inv} (DB data path). Using current_period_end.")
+                    # Fallback to current_period_end from DB
+                    if user_db_data.get("current_period_end"):
+                        if isinstance(user_db_data["current_period_end"], datetime):
+                            renewal_timestamp = int(user_db_data["current_period_end"].timestamp())
+                        else: 
+                            try: renewal_timestamp = int(user_db_data["current_period_end"])
+                            except (ValueError, TypeError): pass # Keep None if conversion fails
+                except stripe.error.StripeError as se:
+                    print(f"⚠️ Stripe error fetching upcoming invoice (DB data path): {se}. Falling back to current_period_end.")
+                    if user_db_data.get("current_period_end"): # Fallback
+                        if isinstance(user_db_data["current_period_end"], datetime):
+                            renewal_timestamp = int(user_db_data["current_period_end"].timestamp())
+                        else: 
+                            try: renewal_timestamp = int(user_db_data["current_period_end"])
+                            except (ValueError, TypeError): pass
+            
+            if renewal_timestamp is None and user_db_data.get("current_period_end"): # If upcoming invoice failed or not applicable
                 if isinstance(user_db_data["current_period_end"], datetime):
                     renewal_timestamp = int(user_db_data["current_period_end"].timestamp())
                 else: 
@@ -1262,14 +1289,14 @@ async def profile(request: Request):
                         renewal_timestamp = int(user_db_data["current_period_end"])
                     except (ValueError, TypeError):
                         print(f"⚠️ Could not convert current_period_end from DB to timestamp: {user_db_data['current_period_end']}")
-                        renewal_timestamp = None
+                        renewal_timestamp = None # Explicitly set to None on failure
             
             subscription_details = {
                 "plan": user_db_data.get("subscription_type", "N/A"),
                 "status": user_db_data.get("subscription_status"),
                 "renewal": renewal_timestamp,
             }
-            print(f"[DEBUG /profile] Initial subscription_details from DB: {subscription_details}")
+            print(f"[DEBUG /profile] Initial subscription_details from DB (potentially with upcoming invoice date): {subscription_details}")
 
         # 3. If DB does NOT indicate active premium, or data is incomplete, then try full live Stripe check & self-heal
         else:
@@ -1323,8 +1350,10 @@ async def profile(request: Request):
             if live_sub_object:
                 sub = live_sub_object 
                 current_plan_nickname = "N/A" 
+                stripe_customer_id_from_sub = sub.customer if hasattr(sub, 'customer') else None
 
-                if sub.items and sub.items.data and len(sub.items.data) > 0: # Check length too
+
+                if sub.items and sub.items.data and len(sub.items.data) > 0: 
                     if sub.items.data[0] and sub.items.data[0].price:
                         price_obj = sub.items.data[0].price
                         current_plan_nickname = price_obj.nickname if price_obj.nickname else price_obj.id
@@ -1333,10 +1362,28 @@ async def profile(request: Request):
                 else:
                     print(f"⚠️ [WARNING /profile] Live subscription (ID: {sub.id}) has no items or items.data is empty.")
 
+                # Initial renewal date from subscription object's current_period_end
+                renewal_date_for_details = sub.current_period_end
+
+                # Try to get a more accurate “next billing date” from upcoming invoice
+                # Use stripe_customer_id_from_sub which is directly from the live subscription object
+                if stripe_customer_id_from_sub and sub.status == 'active': # Only for active subscriptions
+                    try:
+                        print(f"[DEBUG /profile] Attempting to fetch upcoming invoice for customer {stripe_customer_id_from_sub} (from live sub path)")
+                        inv = stripe.Invoice.upcoming(customer=stripe_customer_id_from_sub)
+                        renewal_date_for_details = inv.next_payment_attempt or inv.period_end
+                        print(f"[DEBUG /profile] Upcoming invoice renewal (live sub path): {renewal_date_for_details}")
+                    except stripe.error.InvalidRequestError:
+                        # No upcoming invoice (maybe canceled or trialing without payment method yet), leave renewal as sub.current_period_end
+                        print(f"[INFO /profile] No upcoming invoice found for customer {stripe_customer_id_from_sub} (live sub path). Using subscription's current_period_end.")
+                    except stripe.error.StripeError as se:
+                        print(f"⚠️ Stripe error fetching upcoming invoice (live sub path): {se}. Falling back to subscription's current_period_end.")
+                        # Fallback to sub.current_period_end already assigned to renewal_date_for_details
+
                 subscription_details = {
                     "plan": current_plan_nickname,
                     "status": sub.status,
-                    "renewal": sub.current_period_end 
+                    "renewal": renewal_date_for_details # Use the potentially updated renewal date
                 }
                 print(f"[INFO /profile] Live check successful. Populated subscription_details: {subscription_details}")
 
@@ -1353,12 +1400,12 @@ async def profile(request: Request):
                         except: pass
                 
                 needs_db_update = False
-                stripe_customer_id_from_sub = sub.customer if hasattr(sub, 'customer') else None
+                # stripe_customer_id_from_sub is already defined above
 
                 if not db_is_premium_val or db_status_val != sub.status or \
                    (stripe_customer_id_from_sub and db_stripe_id_val != stripe_customer_id_from_sub) or \
                    db_plan_val != current_plan_nickname or \
-                   db_renewal_val_ts != sub.current_period_end:
+                   db_renewal_val_ts != sub.current_period_end: # Compare DB with sub.current_period_end for self-heal
                     needs_db_update = True
 
                 if needs_db_update:
@@ -1374,6 +1421,7 @@ async def profile(request: Request):
                                 subscription_type = %s, current_period_end = FROM_UNIXTIME(%s)
                             WHERE email = %s
                         """
+                        # For DB update, always use sub.current_period_end from the subscription object itself
                         update_values = (stripe_customer_id_from_sub, True, sub.status, current_plan_nickname, sub.current_period_end, user_email)
                         
                         update_cursor_db_heal.execute(update_query_sql, update_values)
