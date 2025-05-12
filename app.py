@@ -1253,12 +1253,11 @@ async def profile(request: Request):
        user_db_data.get("subscription_status") in ['active', 'trialing']:
         
         print(f"[INFO /profile] DB indicates active/trialing premium subscription for {user_email}. Using DB data for display.")
-        # Ensure current_period_end is a Unix timestamp if it's a datetime object from DB
         renewal_timestamp = None
         if user_db_data.get("current_period_end"):
             if isinstance(user_db_data["current_period_end"], datetime):
                 renewal_timestamp = int(user_db_data["current_period_end"].timestamp())
-            else: # Assuming it might already be a timestamp (e.g., if stored as INT)
+            else: 
                 try:
                     renewal_timestamp = int(user_db_data["current_period_end"])
                 except (ValueError, TypeError):
@@ -1271,22 +1270,19 @@ async def profile(request: Request):
             "renewal": renewal_timestamp,
         }
         print(f"[DEBUG /profile] Initial subscription_details from DB: {subscription_details}")
-        # The stripe_customer_id for "Manage Billing" will be implicitly user_db_data.get("stripe_customer_id")
-        # which is used by the create_portal_session route.
 
     # 3. If DB does NOT indicate active premium, or data is incomplete, then try full live Stripe check & self-heal
     else:
         print(f"[INFO /profile] DB does not indicate active/trialing subscription for {user_email} (is_premium: {user_db_data.get('is_premium') if user_db_data else 'N/A'}, status: {user_db_data.get('subscription_status') if user_db_data else 'N/A'}). Attempting live Stripe check and potential self-heal.")
         
         stripe_customer_id_to_try = user_db_data.get("stripe_customer_id") if user_db_data else None
-        live_sub_object = None # To store the actual Stripe subscription object if found
+        live_sub_object = None 
 
-        # Attempt A: Use stripe_customer_id from DB if available
         if stripe_customer_id_to_try:
             print(f"[DEBUG /profile] Live Check (Attempt A): Using customer_id from DB: {stripe_customer_id_to_try}")
             try:
                 subs_response = stripe.Subscription.list(customer=stripe_customer_id_to_try, status='all', limit=5, expand=['data.items.data.price'])
-                for sub_item in subs_response.data: # Iterate to find active/trialing
+                for sub_item in subs_response.data: 
                     if sub_item.status in ['active', 'trialing']:
                         live_sub_object = sub_item
                         break
@@ -1299,7 +1295,6 @@ async def profile(request: Request):
             except Exception as e:
                 print(f"⚠️ Unexpected Error (Live Check Attempt A with DB customer_id {stripe_customer_id_to_try}): {e}")
         
-        # Attempt B: If no subscription found with DB ID (or DB ID was missing/null), try lookup by email
         if not live_sub_object:
             print(f"[DEBUG /profile] Live Check (Attempt B): No subscription from DB ID or DB ID was null. Trying email lookup: {user_email}")
             try:
@@ -1309,10 +1304,9 @@ async def profile(request: Request):
                     print(f"[DEBUG /profile] Live Check (Attempt B): Found Stripe customer_id via email: {customer_id_from_email}")
                     
                     subs_response = stripe.Subscription.list(customer=customer_id_from_email, status='all', limit=5, expand=['data.items.data.price'])
-                    for sub_item in subs_response.data: # Iterate to find active/trialing
+                    for sub_item in subs_response.data: 
                         if sub_item.status in ['active', 'trialing']:
                             live_sub_object = sub_item
-                            # Important: update stripe_customer_id_to_try if we found the sub using a *different* customer ID
                             stripe_customer_id_to_try = customer_id_from_email 
                             break
                     if live_sub_object:
@@ -1326,12 +1320,20 @@ async def profile(request: Request):
             except Exception as e:
                 print(f"⚠️ Unexpected Error (Live Check Attempt B with email lookup for {user_email}): {e}")
 
-        # If a live active/trialing subscription was found (from any attempt)
         if live_sub_object:
-            sub = live_sub_object # Use the found Stripe subscription object
-            price_obj = sub.items.data[0].price
-            current_plan_nickname = price_obj.nickname if price_obj.nickname else price_obj.id
-            
+            sub = live_sub_object 
+            current_plan_nickname = "N/A" # Default plan nickname
+
+            # Safely access price details
+            if sub.items and sub.items.data:
+                if sub.items.data[0] and sub.items.data[0].price:
+                    price_obj = sub.items.data[0].price
+                    current_plan_nickname = price_obj.nickname if price_obj.nickname else price_obj.id
+                else:
+                    print(f"⚠️ [WARNING /profile] Live subscription (ID: {sub.id}) item has no price object.")
+            else:
+                print(f"⚠️ [WARNING /profile] Live subscription (ID: {sub.id}) has no items or items.data is empty.")
+
             subscription_details = {
                 "plan": current_plan_nickname,
                 "status": sub.status,
@@ -1339,7 +1341,6 @@ async def profile(request: Request):
             }
             print(f"[INFO /profile] Live check successful. Populated subscription_details: {subscription_details}")
 
-            # Self-heal DB if it was out of sync or if user_db_data was initially None
             db_is_premium_val = user_db_data.get("is_premium") if user_db_data else False
             db_status_val = user_db_data.get("subscription_status") if user_db_data else None
             db_stripe_id_val = user_db_data.get("stripe_customer_id") if user_db_data else None
@@ -1353,8 +1354,11 @@ async def profile(request: Request):
                     except: pass
             
             needs_db_update = False
+            # Ensure sub.customer is valid before comparing
+            stripe_customer_id_from_sub = sub.customer if hasattr(sub, 'customer') else None
+
             if not db_is_premium_val or db_status_val != sub.status or \
-               db_stripe_id_val != sub.customer or \
+               (stripe_customer_id_from_sub and db_stripe_id_val != stripe_customer_id_from_sub) or \
                db_plan_val != current_plan_nickname or \
                db_renewal_val_ts != sub.current_period_end:
                 needs_db_update = True
@@ -1365,27 +1369,15 @@ async def profile(request: Request):
                 try:
                     update_conn_db_heal = mysql.connector.connect(host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"), password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME"))
                     update_cursor_db_heal = update_conn_db_heal.cursor()
-                    # Ensure user record exists before attempting UPDATE
-                    if not user_db_data: # If user was not in DB at all, attempt INSERT (basic version)
-                        print(f"[INFO /profile] Self-heal: User {user_email} not found in DB, attempting to insert basic record.")
-                        # This is a simplified insert; ideally, more fields would be populated if known
-                        # For now, focusing on subscription critical fields.
-                        # Password hash, security questions etc., would be missing. This is a fallback.
-                        # A more robust solution would be to redirect to re-login or error if user not in DB.
-                        # However, if they are logged in, they *should* be in the DB.
-                        # This case is more for if the initial DB read failed for some reason but user is valid.
-                        # For now, we'll assume if user_db_data is None, it's an anomaly and we'll just update if they exist.
-                        # A proper insert would require more logic if user truly doesn't exist.
-                        # Given the context, an UPDATE is more likely what's needed if user_db_data was just incomplete.
-                        pass # We will proceed with UPDATE, if user_db_data was None, it implies an issue beyond self-heal scope for INSERT.
-
+                    
                     update_query_sql = """
                         UPDATE users 
                         SET stripe_customer_id = %s, is_premium = %s, subscription_status = %s,
                             subscription_type = %s, current_period_end = FROM_UNIXTIME(%s)
                         WHERE email = %s
                     """
-                    update_values = (sub.customer, True, sub.status, current_plan_nickname, sub.current_period_end, user_email)
+                    # Use stripe_customer_id_from_sub which is confirmed to be from the live subscription object
+                    update_values = (stripe_customer_id_from_sub, True, sub.status, current_plan_nickname, sub.current_period_end, user_email)
                     
                     update_cursor_db_heal.execute(update_query_sql, update_values)
                     update_conn_db_heal.commit()
@@ -1394,10 +1386,9 @@ async def profile(request: Request):
                         live_stripe_sub_found_and_updated_db = True
                         print(f"[INFO /profile] DB self-heal successful for {user_email}.")
                         if request.session.get("is_premium") != True:
-                            request.session["is_premium"] = True # Sync session
+                            request.session["is_premium"] = True 
                             print(f"[INFO /profile] Updated session 'is_premium' to True due to self-heal.")
                     else:
-                        # This could happen if the user was genuinely not in the DB and we didn't INSERT.
                         print(f"⚠️ [WARNING /profile] Self-heal UPDATE affected 0 rows for {user_email}. User might not exist in DB or DB data was already correct (unlikely if needs_db_update was true).")
 
                 except mysql.connector.Error as db_update_err_heal:
@@ -1408,13 +1399,11 @@ async def profile(request: Request):
         else:
              print(f"[INFO /profile] Live check (after all attempts) did not find an active/trialing subscription for {user_email}.")
 
-    # Final consistency check for logging
     session_is_premium = request.session.get("is_premium", False)
-    # Re-fetch DB premium status if self-heal might have occurred and user_db_data was stale
     final_db_is_premium = False
-    if live_stripe_sub_found_and_updated_db: # If DB was updated, assume it's now premium
+    if live_stripe_sub_found_and_updated_db: 
         final_db_is_premium = True
-    elif user_db_data: # Otherwise, use the initially fetched DB state
+    elif user_db_data: 
         final_db_is_premium = user_db_data.get("is_premium", False)
 
     if not subscription_details and (session_is_premium or final_db_is_premium):
