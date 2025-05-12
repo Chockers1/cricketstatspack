@@ -1,33 +1,39 @@
+import logging
 import os
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Form, Depends, HTTPException
-# Add JSONResponse import
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-# Add BaseHTTPMiddleware import
 from starlette.middleware.base import BaseHTTPMiddleware
-# Add timedelta for lockout calculation
-from datetime import datetime, timedelta
 import mysql.connector
-import bcrypt # Ensure bcrypt is imported
-from typing import Optional # Import Optional for optional form fields
+import bcrypt
+from typing import Optional
 import csv
 from io import StringIO
-# Add slowapi imports
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-# Import limiter decorator specifically if needed (or use app.state.limiter)
-# from slowapi.decorator import limiter # Not strictly needed if using app.state.limiter
-
-
-# Import the new admin function, status update function, and reset function
-# Add log_action to the imports
 from auth_utils import verify_user, create_user, get_admin_stats, update_user_status, admin_reset_password, log_action
-from stripe_payments import router as stripe_payments_router # Add this import
-from stripe_webhook import router as stripe_webhook_router # Add this import
+from stripe_payments import router as stripe_payments_router
+from stripe_webhook import router as stripe_webhook_router
+
+# Determine log level from environment variable or default to DEBUG
+LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG").upper()
+numeric_level = getattr(logging, LOG_LEVEL, logging.DEBUG)
+
+logging.basicConfig(
+    level=numeric_level,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(module)s.%(funcName)s:%(lineno)d - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+# Get a logger for this module
+logger = logging.getLogger(__name__)
 
 print("🔥 FASTAPI LOADED 🔥")
 
@@ -43,12 +49,10 @@ class PageViewLoggerMiddleware(BaseHTTPMiddleware):
         # Log page view after the request is processed
         try:
             path = request.url.path
-            ip = request.client.host if request.client else "unknown" # Handle cases where client might be None
+            ip = request.client.host if request.client else "unknown"
             session = request.session
-            # Use 'user_id' as the session key for email, consistent with the rest of the app
             email = session.get("user_id")
 
-            # Avoid logging static file requests or webhook requests if desired
             if path.startswith("/static") or path == "/api/webhook":
                  return response
 
@@ -64,7 +68,6 @@ class PageViewLoggerMiddleware(BaseHTTPMiddleware):
                 cursor = conn.cursor()
                 cursor.execute(
                     "INSERT INTO page_views (email, path, ip_address, timestamp) VALUES (%s, %s, %s, %s)",
-                    # Add timestamp
                     (email, path, ip, datetime.now())
                 )
                 conn.commit()
@@ -77,7 +80,6 @@ class PageViewLoggerMiddleware(BaseHTTPMiddleware):
                 if conn and conn.is_connected(): conn.close()
 
         except Exception as e:
-            # Catch potential errors accessing request/session attributes
             print(f"⚠️ Failed to log page view (Outer Exception): {e}")
 
         return response
@@ -94,15 +96,9 @@ app.state.limiter = limiter
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(
         status_code=429,
-        content={"detail": f"Rate limit exceeded: {exc.detail}"} # Include detail from exception
+        content={"detail": f"Rate limit exceeded: {exc.detail}"}
     )
 
-# SECRET_KEY = os.getenv("SECRET_KEY", "replace-this-with-a-real-secret") # Remove this line
-
-# Add Session Middleware:
-# app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY) # Remove this line
-
-# load your SECRET_KEY from the env
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
     raise RuntimeError("You must set SECRET_KEY in your .env before starting")
@@ -114,8 +110,8 @@ app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 app.add_middleware(PageViewLoggerMiddleware)
 
 # Include the Stripe payments router
-app.include_router(stripe_payments_router) # Add this line
-app.include_router(stripe_webhook_router) # Add this line
+app.include_router(stripe_payments_router)
+app.include_router(stripe_webhook_router)
 
 # your existing mounts & templates
 templates = Jinja2Templates(directory="templates")
@@ -123,15 +119,23 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Copilot: add require_login dependency (Keep for potential future use, but remove from /dashboard)
 def require_login(request: Request):
-  # This function now might check request.session instead if needed elsewhere
-  if not request.session.get("user_id"): # Example: Update to check session if used
+  if not request.session.get("user_id"):
       raise HTTPException(status_code=401, detail="Not authenticated")
 
 # Home page (Updated as requested)
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    # Simply render the public index
-    return templates.TemplateResponse("index.html", {"request": request})
+    logger.info("Root path ('/') accessed.")
+    try:
+        if request.session:
+            logger.debug(f"Session data on root access: {key: type(value) for key, value in request.session.items()}")
+        else:
+            logger.debug("No session data on root access.")
+        
+        return templates.TemplateResponse("index.html", {"request": request})
+    except Exception as e:
+        logger.error(f"Error processing root path ('/'): {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 # Login page
 @app.get("/login", response_class=HTMLResponse)
@@ -140,8 +144,8 @@ async def login_form(request: Request):
 
 # ✅ Single, correct POST route for login (Updated for session and email)
 @app.post("/login")
-@limiter.limit("5/minute") # Apply rate limiting
-async def login_submit(request: Request, email: str = Form(...), password: str = Form(...)): # Changed username to email
+@limiter.limit("5/minute")
+async def login_submit(request: Request, email: str = Form(...), password: str = Form(...)):
     print("🚨 Login POST received")
 
     conn = None
@@ -151,7 +155,6 @@ async def login_submit(request: Request, email: str = Form(...), password: str =
     lockout_duration_minutes = 15
 
     try:
-        # --- 1. Check for existing lock BEFORE verifying password ---
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"), password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
         )
@@ -161,67 +164,56 @@ async def login_submit(request: Request, email: str = Form(...), password: str =
 
         if user_lock_data:
             lock_until = user_lock_data.get("lock_until")
-            # Check if account is locked
-            if lock_until and datetime.now() < lock_until: # Use datetime.now() for comparison
+            if lock_until and datetime.now() < lock_until:
                 lock_remaining = lock_until - datetime.now()
-                minutes_remaining = int(lock_remaining.total_seconds() / 60) + 1 # Round up minutes
+                minutes_remaining = int(lock_remaining.total_seconds() / 60) + 1
                 error_message = f"Account temporarily locked due to too many failed attempts. Try again in {minutes_remaining} minute(s)."
                 print(f"🔒 Login attempt failed for {email}: Account locked until {lock_until}")
                 log_action(email, "LOGIN_FAILURE", "Account locked")
-                return templates.TemplateResponse("login.html", {"request": request, "error": error_message}, status_code=403) # Use 403 status
+                return templates.TemplateResponse("login.html", {"request": request, "error": error_message}, status_code=403)
 
-        # --- 2. Verify Password (if not locked) ---
-        # verify_user handles password check, banned/disabled status, and Stripe fallback
         is_valid_user = verify_user(email, password)
 
         if is_valid_user:
-            # --- 3. Login Success: Reset failures and proceed ---
             print(f"✅ Login success for {email} — redirecting to dashboard")
-            log_action(email, "login", "User logged in successfully") # Already logging success
+            log_action(email, "login", "User logged in successfully")
 
-            # Reset failures and lock_until in DB
-            if user_lock_data and user_lock_data.get("failed_logins", 0) > 0: # Only update if there were previous failures
+            if user_lock_data and user_lock_data.get("failed_logins", 0) > 0:
                 cursor.execute("UPDATE users SET failed_logins = 0, lock_until = NULL WHERE email = %s", (email,))
                 conn.commit()
                 print(f"🔄 Reset failed login attempts for {email}.")
 
-            # Store session info
             request.session["user_id"] = email
-            request.session["login_time"] = datetime.utcnow().isoformat() # Use UTCNow for consistency
+            request.session["login_time"] = datetime.utcnow().isoformat()
             response = RedirectResponse(url="/dashboard", status_code=302)
             return response
         else:
-            # --- 4. Login Failure: Increment failures, check for lockout ---
             print(f"❌ Login failed — invalid credentials or status for {email}")
 
-            if user_lock_data: # User exists, password failed or user is banned/disabled
+            if user_lock_data:
                 current_failures = user_lock_data.get("failed_logins", 0)
                 new_failures = current_failures + 1
-                lock_until_update = user_lock_data.get("lock_until") # Keep existing lock if already set
+                lock_until_update = user_lock_data.get("lock_until")
 
-                error_message = "Invalid login" # Default error
+                error_message = "Invalid login"
 
                 if new_failures >= lockout_threshold:
-                    # Lock the account if threshold reached
                     lock_until_update = datetime.now() + timedelta(minutes=lockout_duration_minutes)
                     error_message = f"Account locked due to too many failed attempts. Try again in {lockout_duration_minutes} minutes."
                     print(f"🚫 Account for {email} locked until {lock_until_update}")
                     log_action(email, "ACCOUNT_LOCKED", f"Locked after {new_failures} failed attempts")
                 else:
-                    # Log failed attempt without locking yet
                     log_action(email, "LOGIN_FAILURE", f"Invalid credentials/status ({new_failures} attempts)")
 
-                # Update DB with new failure count and potential lock time
                 cursor.execute(
                     "UPDATE users SET failed_logins = %s, lock_until = %s WHERE email = %s",
                     (new_failures, lock_until_update, email)
                 )
                 conn.commit()
                 print(f"📈 Updated failed login attempts for {email} to {new_failures}.")
-                # Return appropriate error message (locked or generic invalid)
-                return templates.TemplateResponse("login.html", {"request": request, "error": error_message}, status_code=401 if lock_until_update else 401) # Use 401 for invalid creds
+                return templates.TemplateResponse("login.html", {"request": request, "error": error_message}, status_code=401 if lock_until_update else 401)
 
-            else: # User not found in DB at all
+            else:
                 log_action(email, "LOGIN_FAILURE", "User not found")
                 return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid login"}, status_code=401)
 
@@ -251,7 +243,7 @@ async def register_submit(
     security_question_2: str = Form(...),
     security_answer_2: str = Form(...)
 ):
-    # Try to create user
+    logger.info(f"Registration attempt for email: {email}")
     success = create_user(
         email,
         password,
@@ -263,19 +255,17 @@ async def register_submit(
 
     if not success:
         print(f"❌ Registration failed for email '{email}' — email might already exist")
-        log_action(email, "REGISTER_FAILURE", "Email already exists") # Log failure
+        log_action(email, "REGISTER_FAILURE", "Email already exists")
         return templates.TemplateResponse("register.html", {
             "request": request,
-            # Keep the specific error message
             "error": "An account with this email already exists."
         })
 
-    # ✅ Auto-login the user after successful registration
     conn = None
     cursor = None
     try:
         print(f"✅ User with email '{email}' created successfully. Attempting auto-login...")
-        log_action(email, "REGISTER_SUCCESS") # Log success
+        log_action(email, "REGISTER_SUCCESS")
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"),
             user=os.getenv("DB_USER"),
@@ -283,33 +273,24 @@ async def register_submit(
             database=os.getenv("DB_NAME")
         )
         cursor = conn.cursor(dictionary=True)
-        # Fetch necessary details for session (email, is_premium)
         cursor.execute("SELECT email, is_premium FROM users WHERE email = %s", (email,))
         user = cursor.fetchone()
 
         if user:
-            # Set session variables - Use 'user_id' for email as used elsewhere
             request.session["user_id"] = user["email"]
-            # Initialize is_premium in session (will be refreshed by dashboard)
             request.session["is_premium"] = bool(user.get("is_premium", False))
-            # Log auto-login after registration
             log_action(user["email"], "login", "User logged in successfully (auto-login after registration)")
             print(f"✅ Session set for auto-login: {user['email']}, Premium: {request.session['is_premium']}")
-            # Redirect to dashboard after setting session
             return RedirectResponse("/dashboard", status_code=302)
         else:
-            # Should not happen if create_user succeeded, but handle defensively
             print(f"⚠️ Auto-login failed: Could not fetch user '{email}' after creation.")
-            # Redirect to login page as a fallback
             return RedirectResponse("/login", status_code=302)
 
     except mysql.connector.Error as err:
         print(f"🔥 DB Error during auto-login for {email}: {err}")
-        # Redirect to login page on DB error
         return RedirectResponse("/login", status_code=302)
     except Exception as e:
         print(f"🔥 Unexpected Error during auto-login for {email}: {e}")
-        # Redirect to login page on other errors
         return RedirectResponse("/login", status_code=302)
     finally:
         if cursor: cursor.close()
@@ -320,7 +301,6 @@ async def register_submit(
 async def subscribe_page(request: Request):
     if not request.session.get("user_id"):
         return RedirectResponse("/login")
-    # Pass Price IDs to the template context
     return templates.TemplateResponse("subscribe.html", {
         "request": request,
         "monthly_price_id": os.getenv("STRIPE_PRICE_ID_MONTHLY"),
@@ -331,16 +311,11 @@ async def subscribe_page(request: Request):
 # Updated dashboard route to always check DB and update session using email
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    if not request.session.get("user_id"): # user_id now stores email
-        return RedirectResponse("/login")
-
-    email = request.session["user_id"] # Get email from session
-
-    # 🔄 ALWAYS check DB for latest premium status using email
-    import mysql.connector # Import locally as requested
-    conn = None
-    cursor = None
-    user = None
+    user_email = request.session.get("user_id")
+    logger.info(f"Dashboard accessed by user: {user_email if user_email else 'Guest'}")
+    if not user_email:
+        logger.info("User not logged in, redirecting to login.")
+        return RedirectResponse("/login", status_code=303)
 
     try:
         conn = mysql.connector.connect(
@@ -350,22 +325,19 @@ async def dashboard(request: Request):
             database=os.getenv("DB_NAME")
         )
         cursor = conn.cursor(dictionary=True)
-        # Query by email
-        cursor.execute("SELECT is_premium FROM users WHERE email = %s", (email,))
+        cursor.execute("SELECT is_premium FROM users WHERE email = %s", (user_email,))
         user = cursor.fetchone()
 
         if user:
-            # 🔁 Refresh premium status in session, ensuring it's a boolean
             request.session["is_premium"] = bool(user.get("is_premium"))
         else:
-            # If user somehow not found in DB (though they are logged in), set premium to False
             print(f"⚠️ User with email {email} found in session but not in DB during dashboard load.")
             request.session["is_premium"] = False
 
-    except mysql.connector.Error as err: # Catch specific DB errors
+    except mysql.connector.Error as err:
         print(f"🔥 Dashboard DB check failed for {email}: {err}")
         request.session["is_premium"] = request.session.get("is_premium", False)
-    except Exception as e: # Catch other potential errors
+    except Exception as e:
         print(f"🔥 Dashboard DB check failed unexpectedly for {email}: {e}")
         request.session["is_premium"] = request.session.get("is_premium", False)
     finally:
@@ -374,21 +346,17 @@ async def dashboard(request: Request):
         if conn and conn.is_connected():
             conn.close()
 
-    # Render the dashboard template, which will now use the updated session value
     return templates.TemplateResponse("dashboard.html", {"request": request})
 
 
 # Copilot: add logout endpoint (Updated for session)
 @app.get("/logout")
 async def logout(request: Request):
-    # --- Add Session Duration Logging ---
-    email = request.session.get("user_id") # Use 'user_id' key
+    email = request.session.get("user_id")
     login_time_str = request.session.get("login_time")
 
-    if email: # Log logout action if email exists in session
-        # Update log_action call as requested and remove duplicate
+    if email:
         log_action(email, "logout", "User logged out")
-        # log_action(email, "LOGOUT") # Remove duplicate
 
     if email and login_time_str:
         try:
@@ -396,7 +364,6 @@ async def logout(request: Request):
             logout_dt = datetime.utcnow()
             duration = int((logout_dt - login_dt).total_seconds())
 
-            # Log to database
             conn = None
             cursor = None
             try:
@@ -427,12 +394,9 @@ async def logout(request: Request):
              print(f"❌ Unexpected error during session duration calculation for {email}: {outer_e}")
     else:
         print("ℹ️ Logout initiated but no email or login_time found in session to log duration.")
-    # --- End Session Duration Logging ---
 
-    # Clear the session
     request.session.clear()
     response = RedirectResponse(url="/", status_code=302)
-    # response.delete_cookie(key="logged_in") # Remove cookie deletion
     print("✅ Logout successful — redirecting to home")
     return response
 
@@ -448,18 +412,17 @@ async def success_page(request: Request):
 
 @app.get("/verify-security", response_class=HTMLResponse)
 async def verify_security_form(request: Request):
-    # Renders the initial form asking for email only
     return templates.TemplateResponse("verify_security.html", {
         "request": request,
         "questions": None,
         "error": None,
-        "email": None # Changed from username
+        "email": None
     })
 
 @app.post("/verify-security")
 async def verify_security_submit(
     request: Request,
-    email: str = Form(...), # Changed username to email
+    email: str = Form(...),
     answer1: Optional[str] = Form(None),
     answer2: Optional[str] = Form(None)
 ):
@@ -474,31 +437,28 @@ async def verify_security_submit(
         )
         cursor = conn.cursor(dictionary=True)
 
-        # Fetch user data using email
         cursor.execute(
             "SELECT id, security_question_1, security_answer_1_hash, "
             "security_question_2, security_answer_2_hash, reset_attempts "
-            "FROM users WHERE email = %s", (email,) # Query by email
+            "FROM users WHERE email = %s", (email,)
         )
         user = cursor.fetchone()
 
-        # Generic error for user not found or missing questions/hashes later
-        generic_error = "Invalid email or answers." # Updated generic error
+        generic_error = "Invalid email or answers."
 
         if not user:
             print(f"Security verification step 1 failed: User not found - {email}")
-            log_action(email, "RESET_PASSWORD_VERIFY_FAILURE", "User not found") # Log failure
+            log_action(email, "RESET_PASSWORD_VERIFY_FAILURE", "User not found")
             return templates.TemplateResponse("verify_security.html", {
                 "request": request,
                 "questions": None,
-                "email": email, # Pass email back
+                "email": email,
                 "error": "User not found."
             }, status_code=404)
 
-        # Check reset attempts *before* proceeding
         if user.get('reset_attempts', 0) >= 3:
             print(f"Security verification blocked for user {email} due to too many attempts.")
-            log_action(email, "RESET_PASSWORD_VERIFY_FAILURE", "Too many attempts") # Log failure
+            log_action(email, "RESET_PASSWORD_VERIFY_FAILURE", "Too many attempts")
             return templates.TemplateResponse("verify_security.html", {
                 "request": request,
                 "questions": None,
@@ -506,7 +466,6 @@ async def verify_security_submit(
                 "error": "Too many failed attempts. Please contact support."
             }, status_code=403)
 
-        # Check if security questions/hashes exist in the user record
         q1 = user.get('security_question_1')
         sa1_hash = user.get('security_answer_1_hash')
         q2 = user.get('security_question_2')
@@ -514,7 +473,7 @@ async def verify_security_submit(
 
         if not q1 or not sa1_hash or not q2 or not sa2_hash:
             print(f"Security questions/hashes missing for user {email}.")
-            log_action(email, "RESET_PASSWORD_VERIFY_FAILURE", "Security questions not set up") # Log failure
+            log_action(email, "RESET_PASSWORD_VERIFY_FAILURE", "Security questions not set up")
             return templates.TemplateResponse("verify_security.html", {
                 "request": request,
                 "questions": None,
@@ -522,35 +481,30 @@ async def verify_security_submit(
                 "error": "Security questions not set up for this account. Please contact support."
             }, status_code=400)
 
-        # --- Logic based on whether answers were submitted ---
-
         if answer1 is None or answer2 is None:
-            # Step 1 completed (email submitted), now show questions
             print(f"Security verification step 1 successful for {email}. Showing questions.")
-            log_action(email, "RESET_PASSWORD_VERIFY_STEP1_SUCCESS") # Log step 1 success
+            log_action(email, "RESET_PASSWORD_VERIFY_STEP1_SUCCESS")
             return templates.TemplateResponse("verify_security.html", {
                 "request": request,
                 "questions": [q1, q2],
-                "email": email, # Pass email to keep it in the form (readonly)
+                "email": email,
                 "error": None
             })
         else:
-            # Step 2: Answers submitted, verify them
             correct1 = bcrypt.checkpw(answer1.encode('utf-8'), sa1_hash.encode('utf-8'))
             correct2 = bcrypt.checkpw(answer2.encode('utf-8'), sa2_hash.encode('utf-8'))
 
             if correct1 and correct2:
                 print(f"Security verification step 2 successful for user: {email}")
-                log_action(email, "RESET_PASSWORD_VERIFY_STEP2_SUCCESS") # Log step 2 success
+                log_action(email, "RESET_PASSWORD_VERIFY_STEP2_SUCCESS")
                 cursor.execute("UPDATE users SET reset_attempts = 0 WHERE id = %s", (user['id'],))
                 conn.commit()
 
-                # Store email in session for the reset step
-                request.session['reset_user'] = email # Store email
+                request.session['reset_user'] = email
                 return RedirectResponse("/reset-password", status_code=302)
             else:
                 print(f"Security verification step 2 failed for user: {email}")
-                log_action(email, "RESET_PASSWORD_VERIFY_STEP2_FAILURE", "Incorrect answers") # Log step 2 failure
+                log_action(email, "RESET_PASSWORD_VERIFY_STEP2_FAILURE", "Incorrect answers")
                 cursor.execute("UPDATE users SET reset_attempts = reset_attempts + 1 WHERE id = %s", (user['id'],))
                 conn.commit()
                 return templates.TemplateResponse("verify_security.html", {
@@ -584,8 +538,7 @@ async def verify_security_submit(
 # GET /reset-password
 @app.get("/reset-password", response_class=HTMLResponse)
 async def reset_password_form(request: Request):
-    # Check if user email has passed security verification via session
-    if 'reset_user' not in request.session: # reset_user now stores email
+    if 'reset_user' not in request.session:
         print("Access denied to /reset-password GET: No 'reset_user' (email) in session.")
         return RedirectResponse("/verify-security", status_code=303)
 
@@ -594,26 +547,22 @@ async def reset_password_form(request: Request):
 # POST /reset-password
 @app.post("/reset-password")
 async def reset_password_submit(request: Request, new_password: str = Form(...), confirm_password: str = Form(...)):
-    # Double-check session key existence on POST
     if 'reset_user' not in request.session:
         print("Access denied to /reset-password POST: No 'reset_user' (email) in session.")
-        # No email to log here reliably
         return RedirectResponse("/verify-security", status_code=303)
 
-    email = request.session['reset_user'] # Get email from session
+    email = request.session['reset_user']
 
-    # 1. Check if passwords match
     if new_password != confirm_password:
         print(f"Password mismatch for user {email} during reset attempt.")
-        log_action(email, "RESET_PASSWORD_FAILURE", "Passwords do not match") # Log failure
+        log_action(email, "RESET_PASSWORD_FAILURE", "Passwords do not match")
         return templates.TemplateResponse("reset_password.html", {
             "request": request, "error": "Passwords do not match."
         }, status_code=400)
 
-    # Optional: Basic password validation
     if len(new_password) < 8:
          print(f"Password too short for user {email} during reset attempt.")
-         log_action(email, "RESET_PASSWORD_FAILURE", "Password too short") # Log failure
+         log_action(email, "RESET_PASSWORD_FAILURE", "Password too short")
          return templates.TemplateResponse("reset_password.html", {
              "request": request, "error": "Password must be at least 8 characters long."
          }, status_code=400)
@@ -626,25 +575,20 @@ async def reset_password_submit(request: Request, new_password: str = Form(...),
         )
         cursor = conn.cursor()
 
-        # 2. Hash the new password
         hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-        # 3. Update password_hash in the database using email from session
-        update_query = "UPDATE users SET password_hash = %s WHERE email = %s" # Update by email
+        update_query = "UPDATE users SET password_hash = %s WHERE email = %s"
         cursor.execute(update_query, (hashed_pw, email))
         conn.commit()
 
-        # Check if the update was successful
         if cursor.rowcount == 1:
             print(f"Password successfully reset for email: {email}")
-            # Update log_action call as requested
             log_action(email, "password_reset", "User successfully reset their password")
             request.session.pop('reset_user', None)
             return RedirectResponse("/reset-password-success", status_code=302)
         else:
-            # This case is unlikely if the session key was valid, but handle it.
             print(f"Password reset failed for email: {email}. User might no longer exist.")
-            log_action(email, "RESET_PASSWORD_FAILURE", "User not found during update") # Keep failure log
+            log_action(email, "RESET_PASSWORD_FAILURE", "User not found during update")
             request.session.pop('reset_user', None)
             return templates.TemplateResponse("reset_password.html", {
                 "request": request, "error": "Could not update password. User may not exist.",
@@ -670,7 +614,6 @@ async def reset_password_submit(request: Request, new_password: str = Form(...),
 
 @app.get("/reset-password-success", response_class=HTMLResponse)
 async def reset_password_success(request: Request):
-    # Renders a simple success page after password reset
     return templates.TemplateResponse("reset_password_success.html", {"request": request})
 
 # --- End Reset Password Success Route ---
@@ -680,10 +623,8 @@ async def reset_password_success(request: Request):
 
 @app.get("/change-password", response_class=HTMLResponse)
 async def change_password_form(request: Request):
-    # Check if user is logged in (session user_id is email)
     if not request.session.get("user_id"):
         return RedirectResponse("/login", status_code=303)
-    # Render the change password form
     return templates.TemplateResponse("change_password.html", {"request": request, "error": None, "success": None})
 
 
@@ -694,41 +635,35 @@ async def change_password_submit(
     new_password: str = Form(...),
     confirm_password: str = Form(...)
 ):
-    # Check if user is logged in
-    if not request.session.get("user_id"): # user_id is email
-        # No email to log here reliably
+    if not request.session.get("user_id"):
         return RedirectResponse("/login", status_code=303)
 
-    email = request.session["user_id"] # Get email from session
+    email = request.session["user_id"]
 
-    # 1. Verify current password using email
     if not verify_user(email, current_password):
         print(f"Change password failed for {email}: Incorrect current password.")
-        log_action(email, "CHANGE_PASSWORD_FAILURE", "Incorrect current password") # Log failure
+        log_action(email, "CHANGE_PASSWORD_FAILURE", "Incorrect current password")
         return templates.TemplateResponse("change_password.html", {
             "request": request, "error": "Current password is incorrect.", "success": None
         }, status_code=400)
 
-    # 2. Check if new passwords match
     if new_password != confirm_password:
         print(f"Change password failed for {email}: New passwords do not match.")
-        log_action(email, "CHANGE_PASSWORD_FAILURE", "New passwords do not match") # Log failure
+        log_action(email, "CHANGE_PASSWORD_FAILURE", "New passwords do not match")
         return templates.TemplateResponse("change_password.html", {
             "request": request, "error": "New passwords do not match.", "success": None
         }, status_code=400)
 
-    # 3. Optional: Basic password validation
     if len(new_password) < 8:
          print(f"Change password failed for {email}: New password too short.")
-         log_action(email, "CHANGE_PASSWORD_FAILURE", "New password too short") # Log failure
+         log_action(email, "CHANGE_PASSWORD_FAILURE", "New password too short")
          return templates.TemplateResponse("change_password.html", {
              "request": request, "error": "New password must be at least 8 characters long.", "success": None
          }, status_code=400)
 
-    # 4. Optional: Check if new password is the same as the old one
     if current_password == new_password:
         print(f"Change password failed for {email}: New password is the same as the current one.")
-        log_action(email, "CHANGE_PASSWORD_FAILURE", "New password same as current") # Log failure
+        log_action(email, "CHANGE_PASSWORD_FAILURE", "New password same as current")
         return templates.TemplateResponse("change_password.html", {
             "request": request, "error": "New password cannot be the same as the current password.", "success": None
         }, status_code=400)
@@ -742,25 +677,21 @@ async def change_password_submit(
         )
         cursor = conn.cursor()
 
-        # 5. Hash the new password
         hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-        # 6. Update password_hash in the database using email
-        update_query = "UPDATE users SET password_hash = %s WHERE email = %s" # Update by email
+        update_query = "UPDATE users SET password_hash = %s WHERE email = %s"
         cursor.execute(update_query, (hashed_pw, email))
         conn.commit()
 
-        # Check if the update was successful
         if cursor.rowcount == 1:
             print(f"Password successfully changed for email: {email}")
-            log_action(email, "CHANGE_PASSWORD_SUCCESS") # Log success
+            log_action(email, "CHANGE_PASSWORD_SUCCESS")
             return templates.TemplateResponse("change_password.html", {
                 "request": request, "error": None, "success": "Password changed successfully!"
             })
         else:
-            # This case is unlikely after verification, but handle it.
             print(f"Password change failed unexpectedly for email: {email} after verification.")
-            log_action(email, "CHANGE_PASSWORD_FAILURE", "Unexpected update error") # Log failure
+            log_action(email, "CHANGE_PASSWORD_FAILURE", "Unexpected update error")
             return templates.TemplateResponse("change_password.html", {
                 "request": request, "error": "An unexpected error occurred during password update.", "success": None
             }, status_code=500)
@@ -803,24 +734,33 @@ async def change_password_submit(
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request):
-    # Check session for user_id (which holds the email)
     user_email = request.session.get("user_id")
-    # Simple check against a hardcoded admin email
-    if user_email != "r.taylor289@gmail.com": # Consider using os.getenv("ADMIN_EMAIL") here too
-        print(f"🚨 Unauthorized access attempt to /admin by: {user_email or 'Not logged in'}")
-        raise HTTPException(status_code=403, detail="Access denied")
+    logger.info(f"Admin dashboard access attempt by: {user_email or 'Not logged in'}")
+    
+    # verify_admin function should also have logging
+    # For now, assuming verify_admin is called and might raise HTTPException
+    try:
+        verify_admin(request) # This will raise HTTPException if not admin
+        logger.info(f"Admin access GRANTED to: {user_email}")
+        
+        # stats, users = get_admin_stats() # get_admin_stats should have its own logging
+        # logger.debug(f"Admin stats fetched. Number of users: {len(users) if users else 0}")
+        
+        # Simulate fetching data for logging example
+        stats, users = ({"total_users": 0, "active_sessions": 0}, [])
+        logger.debug(f"Admin stats: {stats}, Users count: {len(users)}")
 
-    print(f"✅ Admin access granted to: {user_email}")
-    # Fetch stats and user data (get_admin_stats now includes session stats)
-    stats, users = get_admin_stats()
-
-    # Render the admin template, passing the entire stats dictionary
-    # The 'stats' dictionary already contains total_sessions, avg_duration, and most_active_users
-    return templates.TemplateResponse("admin_dashboard.html", {
-        "request": request,
-        "stats": stats, # This dictionary includes the new session stats
-        "users": users
-    })
+        return templates.TemplateResponse("admin_dashboard.html", {
+            "request": request,
+            "stats": stats, 
+            "users": users
+        })
+    except HTTPException as http_exc:
+        logger.warning(f"Admin access DENIED for {user_email or 'Not logged in'}. Reason: {http_exc.detail}")
+        raise # Re-raise the HTTPException from verify_admin
+    except Exception as e:
+        logger.error(f"Error loading admin dashboard for {user_email}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error on admin dashboard")
 
 # --- End Admin Dashboard Route ---
 
@@ -830,68 +770,59 @@ async def admin_dashboard(request: Request):
 # Helper function for admin check (to avoid repetition)
 def verify_admin(request: Request):
     user_email = request.session.get("user_id")
-    admin_email_env = os.getenv("ADMIN_EMAIL", "r.taylor289@gmail.com") # Use env var or default
+    admin_email_env = os.getenv("ADMIN_EMAIL", "r.taylor289@gmail.com")
     if user_email != admin_email_env:
         print(f"🚨 Unauthorized access attempt to admin action by: {user_email or 'Not logged in'}")
-        # Log unauthorized attempt if possible (might not have email if not logged in)
         log_action(user_email or "UNKNOWN", "ADMIN_ACTION_UNAUTHORIZED", f"Attempted action on path: {request.url.path}")
         raise HTTPException(status_code=403, detail="Access denied")
     print(f"✅ Admin action authorized for: {user_email}")
-    return user_email # Return email if verified
+    return user_email
 
 @app.post("/admin/ban")
 async def ban_user(request: Request, email: str = Form(...)):
-    admin_email = verify_admin(request) # Check if admin and get admin email
-    target_email = email # Use the form email as target_email
+    admin_email = verify_admin(request)
+    target_email = email
     if update_user_status(email, "is_banned", True):
         print(f"✅ User '{email}' banned successfully by {admin_email}.")
-        # Update log_action call as requested
         log_action(admin_email, "ban_user", f"Banned user: {target_email}")
     else:
         print(f"⚠️ Failed to ban user '{email}' by {admin_email}.")
-        log_action(admin_email, "ADMIN_BAN_USER_FAILURE", f"Target: {target_email}") # Keep failure log
+        log_action(admin_email, "ADMIN_BAN_USER_FAILURE", f"Target: {target_email}")
     return RedirectResponse("/admin", status_code=302)
 
 @app.post("/admin/disable")
 async def disable_user(request: Request, email: str = Form(...)):
-    admin_email = verify_admin(request) # Check if admin and get admin email
+    admin_email = verify_admin(request)
     if update_user_status(email, "is_disabled", True):
          print(f"✅ User '{email}' disabled successfully by {admin_email}.")
-         log_action(admin_email, "ADMIN_DISABLE_USER", f"Target: {email}") # Log action
-         # Also ensure banned status is not conflicting if needed (e.g., disable implies not banned)
-         # update_user_status(email, "is_banned", False) # Optional: Ensure ban is removed if disabling
+         log_action(admin_email, "ADMIN_DISABLE_USER", f"Target: {email}")
     else:
          print(f"⚠️ Failed to disable user '{email}' by {admin_email}.")
-         log_action(admin_email, "ADMIN_DISABLE_USER_FAILURE", f"Target: {email}") # Log failure
+         log_action(admin_email, "ADMIN_DISABLE_USER_FAILURE", f"Target: {email}")
     return RedirectResponse("/admin", status_code=302)
 
 @app.post("/admin/enable")
 async def enable_user(request: Request, email: str = Form(...)):
-    admin_email = verify_admin(request) # Check if admin and get admin email
-    # This correctly enables the user by setting is_disabled to False (0 in DB)
+    admin_email = verify_admin(request)
     if update_user_status(email, "is_disabled", False):
         print(f"✅ User '{email}' enabled successfully by {admin_email}.")
-        log_action(admin_email, "ADMIN_ENABLE_USER", f"Target: {email}") # Log action
+        log_action(admin_email, "ADMIN_ENABLE_USER", f"Target: {email}")
     else:
         print(f"⚠️ Failed to enable user '{email}' by {admin_email}.")
-        log_action(admin_email, "ADMIN_ENABLE_USER_FAILURE", f"Target: {email}") # Log failure
+        log_action(admin_email, "ADMIN_ENABLE_USER_FAILURE", f"Target: {email}")
     return RedirectResponse("/admin", status_code=302)
 
 # Add the unban route
 @app.post("/admin/unban")
 async def unban_user(request: Request, email: str = Form(...)):
-    admin_email = verify_admin(request) # Check if admin and get admin email
-    target_email = email # Use the form email as target_email
-    # This correctly unbans the user by setting is_banned to False (0 in DB)
+    admin_email = verify_admin(request)
+    target_email = email
     if update_user_status(email, "is_banned", False):
         print(f"✅ User '{email}' unbanned successfully by {admin_email}.")
-        # Update log_action call as requested
         log_action(admin_email, "unban_user", f"Unbanned user: {target_email}")
-        # Optionally, ensure user is also enabled if unbanning implies enabling
-        # update_user_status(email, "is_disabled", False)
     else:
         print(f"⚠️ Failed to unban user '{email}' by {admin_email}.")
-        log_action(admin_email, "ADMIN_UNBAN_USER_FAILURE", f"Target: {target_email}") # Keep failure log
+        log_action(admin_email, "ADMIN_UNBAN_USER_FAILURE", f"Target: {target_email}")
     return RedirectResponse("/admin", status_code=302)
 
 # Replace the previous handle_admin_reset_password route
@@ -901,25 +832,19 @@ async def reset_user_password(
     email: str = Form(...),
     new_password: str = Form(...)
 ):
-    # --- Start: Code adapted from user prompt ---
-    # Ensure admin is logged in and get admin email
     admin_email = verify_admin(request)
 
-    # Basic validation (optional but recommended)
     if len(new_password) < 8:
         print(f"⚠️ Admin password reset failed for '{email}': Password too short.")
-        log_action(admin_email, "ADMIN_RESET_PASSWORD_FAILURE", f"Target: {email}, Reason: Password too short") # Log failure
-        # Consider adding user feedback here (e.g., flash message or query param)
-        return RedirectResponse("/admin", status_code=302) # Use 302 for redirect after POST
+        log_action(admin_email, "ADMIN_RESET_PASSWORD_FAILURE", f"Target: {email}, Reason: Password too short")
+        return RedirectResponse("/admin", status_code=302)
 
     conn = None
     cursor = None
-    success = False # Flag to track success for logging
+    success = False
     try:
-        # Hash the new password (bcrypt is imported globally)
         hashed_pw = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-        # Connect to DB (using pattern from elsewhere in the file)
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"),
             user=os.getenv("DB_USER"),
@@ -928,7 +853,6 @@ async def reset_user_password(
         )
         cursor = conn.cursor()
 
-        # Update password_hash and reset attempts
         cursor.execute("UPDATE users SET password_hash = %s, reset_attempts = 0 WHERE email = %s", (hashed_pw, email))
         conn.commit()
 
@@ -937,40 +861,33 @@ async def reset_user_password(
              success = True
         else:
              print(f"⚠️ Admin password reset: User {email} not found or DB error.")
-             # Consider adding user feedback here
 
     except mysql.connector.Error as err:
         print(f"🔥 DB Error during admin password reset for {email}: {err}")
-        # Consider adding user feedback here
     except Exception as e:
         print(f"🔥 Unexpected error during admin password reset for {email}: {e}")
-        # Consider adding user feedback here
     finally:
         if cursor: cursor.close()
         if conn and conn.is_connected(): conn.close()
 
-    # Log action based on success flag
     if success:
         log_action(admin_email, "ADMIN_RESET_PASSWORD_SUCCESS", f"Target: {email}")
     else:
-        # Log failure if not already logged for specific validation errors
-        if len(new_password) >= 8: # Avoid double logging validation error
+        if len(new_password) >= 8:
             log_action(admin_email, "ADMIN_RESET_PASSWORD_FAILURE", f"Target: {email}, Reason: DB error or user not found")
 
-    # Redirect back to admin page (use 302 for redirect after POST)
     return RedirectResponse("/admin", status_code=302)
-    # --- End: Code adapted from user prompt ---
 
 # --- End Admin Action Routes ---
 
 # --- Admin User Detail Route (Updated) ---
 @app.get("/admin/user/{email}")
 async def view_user_details(email: str, request: Request):
-    verify_admin(request) # Use the helper function for auth
+    verify_admin(request)
 
-    user_details = None # To store user data from 'users' table
-    audit_logs = [] # Changed from sessions to audit_logs
-    reset_activity_count = 0 # Keep this as it queries audit_logs too
+    user_details = None
+    audit_logs = []
+    reset_activity_count = 0
     conn = None
     cursor = None
 
@@ -983,7 +900,6 @@ async def view_user_details(email: str, request: Request):
         )
         cursor = conn.cursor(dictionary=True)
 
-        # Fetch user details from 'users' table (Keep this)
         cursor.execute("""
             SELECT email, created_at, is_premium, subscription_type, subscription_status,
                    current_period_end, stripe_customer_id, is_banned, is_disabled, reset_attempts,
@@ -996,7 +912,6 @@ async def view_user_details(email: str, request: Request):
         if not user_details:
              raise HTTPException(status_code=404, detail="User not found")
 
-        # Format dates for user details (Keep this)
         if user_details.get('created_at'):
             user_details['created_at_formatted'] = user_details['created_at'].strftime('%Y-%m-%d %H:%M:%S UTC')
         if user_details.get('current_period_end'):
@@ -1009,7 +924,6 @@ async def view_user_details(email: str, request: Request):
              user_details['lock_until_formatted'] = 'N/A'
 
 
-        # Fetch recent audit logs for this user
         cursor.execute("""
             SELECT timestamp, action, details
             FROM audit_logs
@@ -1018,13 +932,11 @@ async def view_user_details(email: str, request: Request):
             LIMIT 50
         """, (email,))
         audit_logs = cursor.fetchall()
-        # Format timestamp for display
         for log in audit_logs:
             if log.get('timestamp'):
                 log['timestamp_formatted'] = log['timestamp'].strftime('%Y-%m-%d %H:%M:%S UTC')
 
 
-        # Fetch password reset related activity count from audit logs (Keep this)
         cursor.execute("""
             SELECT COUNT(*) AS count
             FROM audit_logs
@@ -1035,7 +947,6 @@ async def view_user_details(email: str, request: Request):
 
     except mysql.connector.Error as err:
         print(f"🔥 DB Error fetching user details for {email}: {err}")
-        # Handle error appropriately, maybe show an error message in the template
         raise HTTPException(status_code=500, detail="Database error fetching user details.")
     except Exception as e:
         print(f"🔥 Unexpected error fetching user details for {email}: {e}")
@@ -1044,12 +955,11 @@ async def view_user_details(email: str, request: Request):
         if cursor: cursor.close()
         if conn and conn.is_connected(): conn.close()
 
-    # Pass user_details and audit_logs to the template
     return templates.TemplateResponse("user_details.html", {
         "request": request,
-        "user": user_details, # Pass the full user details dict
-        "email": email, # Keep email for title consistency if needed
-        "logs": audit_logs, # Pass audit logs instead of sessions
+        "user": user_details,
+        "email": email,
+        "logs": audit_logs,
         "reset_activity_count": reset_activity_count
     })
 # --- End Admin User Detail Route ---
@@ -1057,7 +967,7 @@ async def view_user_details(email: str, request: Request):
 # --- New Admin Churn Report Route ---
 @app.get("/admin/churn")
 async def churn_report(request: Request):
-    verify_admin(request) # Use the helper function for auth
+    verify_admin(request)
 
     churned_users = []
     conn = None
@@ -1071,7 +981,6 @@ async def churn_report(request: Request):
             database=os.getenv("DB_NAME")
         )
         cursor = conn.cursor(dictionary=True)
-        # Fetch 'churn' actions from audit logs
         cursor.execute("""
             SELECT email, timestamp, details
             FROM audit_logs
@@ -1079,7 +988,6 @@ async def churn_report(request: Request):
             ORDER BY timestamp DESC
         """)
         churned_users = cursor.fetchall()
-        # Format dates
         for user in churned_users:
             if user.get('timestamp'):
                 user['timestamp_formatted'] = user['timestamp'].strftime('%Y-%m-%d %H:%M:%S UTC')
@@ -1103,11 +1011,10 @@ async def churn_report(request: Request):
 
 # --- Export Users Route (Replacing previous implementation) ---
 
-@app.get("/admin/export-users", response_class=StreamingResponse) # Keep response_class
-async def export_users(request: Request): # Keep async and request parameter
-    # Security: only allow admin (using existing verify_admin helper)
+@app.get("/admin/export-users", response_class=StreamingResponse)
+async def export_users(request: Request):
     admin_email = verify_admin(request)
-    log_action(admin_email, "ADMIN_EXPORT_USERS") # Log export action
+    log_action(admin_email, "ADMIN_EXPORT_USERS")
 
     conn = None
     cursor = None
@@ -1115,17 +1022,14 @@ async def export_users(request: Request): # Keep async and request parameter
     headers = []
 
     try:
-        # Connect to DB (using pattern from elsewhere in the file)
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"),
             user=os.getenv("DB_USER"),
             password=os.getenv("DB_PASS"),
             database=os.getenv("DB_NAME")
         )
-        # Use standard cursor to match csv.writer which expects tuples/lists
         cursor = conn.cursor()
 
-        # Fetch relevant data for ALL users - Adjusted fields
         cursor.execute("""
             SELECT email, created_at, is_premium, subscription_type, subscription_status,
                    current_period_end, stripe_customer_id, is_banned, is_disabled, reset_attempts
@@ -1133,7 +1037,7 @@ async def export_users(request: Request): # Keep async and request parameter
             ORDER BY created_at DESC
         """)
         rows = cursor.fetchall()
-        headers = [i[0] for i in cursor.description] # Get headers from cursor description
+        headers = [i[0] for i in cursor.description]
         print(f"📊 Found {len(rows)} users for export.")
 
     except mysql.connector.Error as err:
@@ -1146,15 +1050,12 @@ async def export_users(request: Request): # Keep async and request parameter
         if cursor: cursor.close()
         if conn and conn.is_connected(): conn.close()
 
-    # Create CSV in memory using io.StringIO and csv.writer
-    output = StringIO() # Use StringIO from io module
+    output = StringIO()
     writer = csv.writer(output)
-    writer.writerow(headers) # Write headers first
+    writer.writerow(headers)
 
-    # Format and write rows
     for row_tuple in rows:
-        formatted_row = list(row_tuple) # Convert tuple to list for modification
-        # Find indices of columns to format (adjust if query changes)
+        formatted_row = list(row_tuple)
         try:
             created_at_idx = headers.index('created_at')
             period_end_idx = headers.index('current_period_end')
@@ -1162,32 +1063,96 @@ async def export_users(request: Request): # Keep async and request parameter
             is_banned_idx = headers.index('is_banned')
             is_disabled_idx = headers.index('is_disabled')
 
-            # Format datetime objects
             if isinstance(formatted_row[created_at_idx], datetime):
                 formatted_row[created_at_idx] = formatted_row[created_at_idx].strftime('%Y-%m-%d %H:%M:%S')
             if isinstance(formatted_row[period_end_idx], datetime):
                  formatted_row[period_end_idx] = formatted_row[period_end_idx].strftime('%Y-%m-%d %H:%M:%S')
 
-            # Format boolean/tinyint fields
             formatted_row[is_premium_idx] = 'Yes' if formatted_row[is_premium_idx] else 'No'
             formatted_row[is_banned_idx] = 'Yes' if formatted_row[is_banned_idx] else 'No'
             formatted_row[is_disabled_idx] = 'Yes' if formatted_row[is_disabled_idx] else 'No'
 
-            # Handle None values -> empty strings
             formatted_row = ["" if item is None else item for item in formatted_row]
 
         except ValueError as ve:
             print(f"⚠️ Error finding column index during CSV formatting: {ve}")
-            # Handle error - maybe skip formatting for this row or log more details
-            formatted_row = ["" if item is None else item for item in formatted_row] # Basic None handling
+            formatted_row = ["" if item is None else item for item in formatted_row]
 
         writer.writerow(formatted_row)
 
     output.seek(0)
-    # Return StreamingResponse with the new filename
     return StreamingResponse(output, media_type="text/csv", headers={
-        "Content-Disposition": "attachment; filename=all_users.csv" # Updated filename
+        "Content-Disposition": "attachment; filename=all_users.csv"
     })
 
 # --- End Export Users Route ---
+
+# --- Stripe Webhook ---
+@app.post("/stripe-webhook")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+    event = None
+    logger.info("Stripe webhook received.")
+
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, os.getenv("STRIPE_WEBHOOK_SECRET")
+        )
+        logger.info(f"Stripe event constructed: id={event.id}, type={event.type}")
+    except ValueError as e:
+        logger.error(f"Invalid webhook payload: {e}", exc_info=True)
+        return HTTPException(status_code=400, detail="Invalid payload")
+    except stripe.error.SignatureVerificationError as e:
+        logger.error(f"Webhook signature verification failed: {e}", exc_info=True)
+        return HTTPException(status_code=400, detail="Invalid signature")
+    except Exception as e:
+        logger.error(f"Error constructing Stripe event: {e}", exc_info=True)
+        return HTTPException(status_code=500, detail="Could not process webhook event")
+
+    # Handle the event
+    try:
+        logger.debug(f"Handling event type: {event.type}")
+        if event.type == 'checkout.session.completed':
+            session = event.data.object
+            logger.info(f"Checkout session completed: {session.id} for customer {session.customer}")
+            # ... logic to fulfill order, update database ...
+            # e.g., update_user_subscription_status(session.customer, session.subscription, "active")
+            # logger.info(f"Database updated for checkout session {session.id}")
+
+        elif event.type == 'invoice.payment_succeeded':
+            invoice = event.data.object
+            logger.info(f"Invoice payment succeeded: {invoice.id} for customer {invoice.customer}")
+            # ... logic for successful payment ...
+            # e.g., update_subscription_period(invoice.customer, invoice.subscription)
+            # logger.info(f"Subscription period updated for invoice {invoice.id}")
+            
+        elif event.type == 'invoice.payment_failed':
+            invoice = event.data.object
+            logger.warning(f"Invoice payment failed: {invoice.id} for customer {invoice.customer}. Billing reason: {invoice.billing_reason}")
+            # ... logic for failed payment, notify user, update status ...
+            # e.g., set_user_subscription_status(invoice.customer, "payment_failed")
+            # logger.warning(f"Subscription status updated to payment_failed for invoice {invoice.id}")
+
+        elif event.type == 'customer.subscription.deleted':
+            subscription = event.data.object
+            logger.info(f"Customer subscription deleted (churned): {subscription.id} for customer {subscription.customer}")
+            # ... logic for churn, update database ...
+            # e.g., mark_subscription_as_canceled(subscription.customer, subscription.id)
+            # logger.info(f"Subscription {subscription.id} marked as canceled in DB.")
+            
+        # Add more event types as needed
+        # elif event.type == 'customer.subscription.updated':
+        #     subscription = event.data.object
+        #     logger.info(f"Subscription {subscription.id} updated. Status: {subscription.status}, Current Period End: {datetime.fromtimestamp(subscription.current_period_end) if subscription.current_period_end else 'N/A'}")
+        #     # ... logic to update subscription details in your DB ...
+
+        else:
+            logger.info(f"Received unhandled event type: {event.type}")
+        
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Error handling Stripe event type {event.type if event else 'UNKNOWN'}: {e}", exc_info=True)
+        # Return 500 so Stripe retries, but be cautious about retry storms for non-recoverable errors.
+        return HTTPException(status_code=500, detail="Error processing webhook event.")
 
