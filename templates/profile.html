@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>My Profile</h1>
+
+  <p><strong>Email:</strong> {{ email }}</p>
+
+  {% if subscription %}
+    <p><strong>Subscription Plan:</strong> {{ subscription.plan }}</p>
+    <p><strong>Status:</strong> <span class="status-{{ subscription.status | lower }}">{{ subscription.status | capitalize }}</span></p>
+    {% if subscription.status == 'active' or subscription.status == 'trialing' %}
+      <p>
+        <strong>Next Billing Date:</strong>
+        {{ subscription.renewal | datetimeformat }}
+      </p>
+    {% elif subscription.status == 'canceled' and subscription.renewal %}
+      <p>
+        <strong>Subscription valid until:</strong>
+        {{ subscription.renewal | datetimeformat }}
+      </p>
+    {% elif subscription.status == 'past_due' %}
+      <p><strong>Status:</strong> Your payment is past due. Please update your payment method.</p>
+    {% elif subscription.status == 'unpaid' %}
+      <p><strong>Status:</strong> Your subscription is unpaid and inactive.</p>
+    {% endif %}
+    <!-- Link to Stripe Customer Portal -->
+    <p><a href="{{ url_for('create_portal_session') }}" class="btn btn-info">Manage Billing & Subscription</a></p>
+  {% else %}
+    <p><em>You don’t have an active subscription.</em></p>
+    <p><a href="{{ url_for('subscribe_page') }}" class="btn btn-primary">Subscribe Now</a></p>
+  {% endif %}
+
+  <hr>
+  <p><a href="{{ url_for('change_password_form') }}">🔐 Change Password</a></p>
+
+  <style>
+    .status-active { color: green; font-weight: bold; }
+    .status-trialing { color: blue; font-weight: bold; }
+    .status-canceled { color: orange; font-weight: bold; }
+    .status-past_due { color: red; font-weight: bold; }
+    .status-unpaid { color: darkred; font-weight: bold; }
+  </style>
+{% endblock %}

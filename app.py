@@ -22,6 +22,8 @@ from slowapi.errors import RateLimitExceeded
 # Import limiter decorator specifically if needed (or use app.state.limiter)
 # from slowapi.decorator import limiter # Not strictly needed if using app.state.limiter
 
+# Import stripe
+import stripe
 
 # Import the new admin function, status update function, and reset function
 # Add log_action to the imports
@@ -120,6 +122,21 @@ app.include_router(stripe_webhook_router) # Add this line
 # your existing mounts & templates
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Set up Stripe API key
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+
+# Add datetimeformat filter for Jinja2
+def datetimeformat(value):
+    # Handles cases where value might be None or not a valid timestamp
+    if value is None:
+        return "N/A"
+    try:
+        return datetime.utcfromtimestamp(int(value)).strftime('%Y-%m-%d')
+    except (TypeError, ValueError):
+        return "Invalid Date"
+
+templates.env.filters['datetimeformat'] = datetimeformat
 
 # Copilot: add require_login dependency (Keep for potential future use, but remove from /dashboard)
 def require_login(request: Request):
@@ -1190,4 +1207,68 @@ async def export_users(request: Request): # Keep async and request parameter
     })
 
 # --- End Export Users Route ---
+
+# --- Profile Page Route ---
+@app.get("/profile", response_class=HTMLResponse)
+async def profile(request: Request):
+    user_email = request.session.get("user_id")
+    if not user_email:
+        return RedirectResponse("/login", status_code=303)
+
+    subscription_details = None
+    stripe_customer_id = None
+    conn = None
+    cursor = None
+
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"),
+            database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT stripe_customer_id FROM users WHERE email = %s", (user_email,))
+        user_db_data = cursor.fetchone()
+        if user_db_data:
+            stripe_customer_id = user_db_data.get("stripe_customer_id")
+
+    except mysql.connector.Error as db_err:
+        print(f"⚠️ DB Error fetching stripe_customer_id for {user_email}: {db_err}")
+        # Optionally, you could show an error on the profile page or handle differently
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
+
+    if stripe_customer_id:
+        try:
+            # List subscriptions for the customer, limit to 1 (usually the most recent/active)
+            subscriptions = stripe.Subscription.list(customer=stripe_customer_id, limit=1, status='all') # Fetch all statuses
+            if subscriptions and subscriptions.data:
+                sub = subscriptions.data[0]
+                # Get price details (nickname or ID)
+                plan_nickname = "N/A"
+                if sub.items and sub.items.data:
+                    price = sub.items.data[0].price
+                    plan_nickname = price.nickname if price.nickname else price.id
+
+                subscription_details = {
+                    "plan": plan_nickname,
+                    "status": sub.status,
+                    "renewal": sub.current_period_end  # This is a Unix timestamp
+                }
+        except stripe.error.StripeError as e:
+            print(f"⚠️ Stripe API Error fetching subscription for customer {stripe_customer_id}: {e}")
+            # Handle Stripe API errors (e.g., log, show generic message to user)
+        except Exception as e:
+            print(f"⚠️ Unexpected error fetching subscription details for {user_email}: {e}")
+
+
+    return templates.TemplateResponse("profile.html", {
+        "request": request,
+        "email": user_email,
+        "subscription": subscription_details
+    })
+
+# --- End Profile Page Route ---
 
