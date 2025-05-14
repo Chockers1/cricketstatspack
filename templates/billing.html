@@ -9,8 +9,7 @@
       You'll continue to have premium access until then.
     </div>
   {% endif %}
-  
-  {% if request.query_params.get('error') %}
+    {% if request.query_params.get('error') %}
     <div class="alert alert-danger mb-4">
       {% if request.query_params.get('error') == 'no_subscription' %}
         No active subscription found to cancel.
@@ -22,7 +21,9 @@
         An unexpected error occurred. Please try again later.
       {% endif %}
     </div>
-  {% endif %}  {% if subscription %}
+  {% endif %}
+  
+  {% if subscription %}
     <div class="card mb-4 p-3">
       <h3>Current Subscription</h3>
       <p>
