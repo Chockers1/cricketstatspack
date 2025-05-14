@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import os
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -42,7 +42,7 @@ logging.basicConfig(
 # Get a logger for this module
 logger = logging.getLogger(__name__)
 
-print("🔥 FASTAPI LOADED 🔥")
+print("ðŸ”¥ FASTAPI LOADED ðŸ”¥")
 
 load_dotenv()  # loads .env into os.environ
 
@@ -79,15 +79,15 @@ class PageViewLoggerMiddleware(BaseHTTPMiddleware):
                 )
                 conn.commit()
             except mysql.connector.Error as db_err:
-                 print(f"⚠️ DB Error logging page view: {db_err}")
+                 print(f"âš ï¸ DB Error logging page view: {db_err}")
             except Exception as inner_e:
-                 print(f"⚠️ Inner Exception logging page view: {inner_e}")
+                 print(f"âš ï¸ Inner Exception logging page view: {inner_e}")
             finally:
                 if cursor: cursor.close()
                 if conn and conn.is_connected(): conn.close()
 
         except Exception as e:
-            print(f"⚠️ Failed to log page view (Outer Exception): {e}")
+            print(f"âš ï¸ Failed to log page view (Outer Exception): {e}")
 
         return response
 
@@ -151,11 +151,11 @@ async def root(request: Request):
 async def login_form(request: Request):
     return templates.TemplateResponse("login.html", {"request": request, "error": None})
 
-# ✅ Single, correct POST route for login (Updated for session and email)
+# âœ… Single, correct POST route for login (Updated for session and email)
 @app.post("/login")
 @limiter.limit("5/minute")
 async def login_submit(request: Request, email: str = Form(...), password: str = Form(...)):
-    print("🚨 Login POST received")
+    print("ðŸš¨ Login POST received")
 
     conn = None
     cursor = None
@@ -177,27 +177,27 @@ async def login_submit(request: Request, email: str = Form(...), password: str =
                 lock_remaining = lock_until - datetime.now()
                 minutes_remaining = int(lock_remaining.total_seconds() / 60) + 1
                 error_message = f"Account temporarily locked due to too many failed attempts. Try again in {minutes_remaining} minute(s)."
-                print(f"🔒 Login attempt failed for {email}: Account locked until {lock_until}")
+                print(f"ðŸ”’ Login attempt failed for {email}: Account locked until {lock_until}")
                 log_action(email, "LOGIN_FAILURE", "Account locked")
                 return templates.TemplateResponse("login.html", {"request": request, "error": error_message}, status_code=403)
 
         is_valid_user = verify_user(email, password)
 
         if is_valid_user:
-            print(f"✅ Login success for {email} — redirecting to dashboard")
+            print(f"âœ… Login success for {email} â€” redirecting to dashboard")
             log_action(email, "login", "User logged in successfully")
 
             if user_lock_data and user_lock_data.get("failed_logins", 0) > 0:
                 cursor.execute("UPDATE users SET failed_logins = 0, lock_until = NULL WHERE email = %s", (email,))
                 conn.commit()
-                print(f"🔄 Reset failed login attempts for {email}.")
+                print(f"ðŸ”„ Reset failed login attempts for {email}.")
 
             request.session["user_id"] = email
             request.session["login_time"] = datetime.utcnow().isoformat()
             response = RedirectResponse(url="/dashboard", status_code=302)
             return response
         else:
-            print(f"❌ Login failed — invalid credentials or status for {email}")
+            print(f"âŒ Login failed â€” invalid credentials or status for {email}")
 
             if user_lock_data:
                 current_failures = user_lock_data.get("failed_logins", 0)
@@ -209,7 +209,7 @@ async def login_submit(request: Request, email: str = Form(...), password: str =
                 if new_failures >= lockout_threshold:
                     lock_until_update = datetime.now() + timedelta(minutes=lockout_duration_minutes)
                     error_message = f"Account locked due to too many failed attempts. Try again in {lockout_duration_minutes} minutes."
-                    print(f"🚫 Account for {email} locked until {lock_until_update}")
+                    print(f"ðŸš« Account for {email} locked until {lock_until_update}")
                     log_action(email, "ACCOUNT_LOCKED", f"Locked after {new_failures} failed attempts")
                 else:
                     log_action(email, "LOGIN_FAILURE", f"Invalid credentials/status ({new_failures} attempts)")
@@ -219,7 +219,7 @@ async def login_submit(request: Request, email: str = Form(...), password: str =
                     (new_failures, lock_until_update, email)
                 )
                 conn.commit()
-                print(f"📈 Updated failed login attempts for {email} to {new_failures}.")
+                print(f"ðŸ“ˆ Updated failed login attempts for {email} to {new_failures}.")
                 return templates.TemplateResponse("login.html", {"request": request, "error": error_message}, status_code=401 if lock_until_update else 401)
 
             else:
@@ -227,10 +227,10 @@ async def login_submit(request: Request, email: str = Form(...), password: str =
                 return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid login"}, status_code=401)
 
     except mysql.connector.Error as db_err:
-        print(f"🔥 DB Error during login for {email}: {db_err}")
+        print(f"ðŸ”¥ DB Error during login for {email}: {db_err}")
         return templates.TemplateResponse("login.html", {"request": request, "error": "Database error during login."}, status_code=500)
     except Exception as e:
-        print(f"🔥 Unexpected error during login for {email}: {e}")
+        print(f"ðŸ”¥ Unexpected error during login for {email}: {e}")
         return templates.TemplateResponse("login.html", {"request": request, "error": "An unexpected error occurred."}, status_code=500)
     finally:
         if cursor: cursor.close()
@@ -263,7 +263,7 @@ async def register_submit(
     )
 
     if not success:
-        print(f"❌ Registration failed for email '{email}' — email might already exist")
+        print(f"âŒ Registration failed for email '{email}' â€” email might already exist")
         log_action(email, "REGISTER_FAILURE", "Email already exists")
         return templates.TemplateResponse("register.html", {
             "request": request,
@@ -273,7 +273,7 @@ async def register_submit(
     conn = None
     cursor = None
     try:
-        print(f"✅ User with email '{email}' created successfully. Attempting auto-login...")
+        print(f"âœ… User with email '{email}' created successfully. Attempting auto-login...")
         log_action(email, "REGISTER_SUCCESS")
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"),
@@ -289,17 +289,17 @@ async def register_submit(
             request.session["user_id"] = user["email"]
             request.session["is_premium"] = bool(user.get("is_premium", False))
             log_action(user["email"], "login", "User logged in successfully (auto-login after registration)")
-            print(f"✅ Session set for auto-login: {user['email']}, Premium: {request.session['is_premium']}")
+            print(f"âœ… Session set for auto-login: {user['email']}, Premium: {request.session['is_premium']}")
             return RedirectResponse("/dashboard", status_code=302)
         else:
-            print(f"⚠️ Auto-login failed: Could not fetch user '{email}' after creation.")
+            print(f"âš ï¸ Auto-login failed: Could not fetch user '{email}' after creation.")
             return RedirectResponse("/login", status_code=302)
 
     except mysql.connector.Error as err:
-        print(f"🔥 DB Error during auto-login for {email}: {err}")
+        print(f"ðŸ”¥ DB Error during auto-login for {email}: {err}")
         return RedirectResponse("/login", status_code=302)
     except Exception as e:
-        print(f"🔥 Unexpected Error during auto-login for {email}: {e}")
+        print(f"ðŸ”¥ Unexpected Error during auto-login for {email}: {e}")
         return RedirectResponse("/login", status_code=302)
     finally:
         if cursor: cursor.close()
@@ -389,25 +389,25 @@ async def logout(request: Request):
                     (email, login_dt, logout_dt, duration)
                 )
                 conn.commit()
-                print(f"✅ Logged session duration for {email}: {duration} seconds.")
+                print(f"âœ… Logged session duration for {email}: {duration} seconds.")
             except mysql.connector.Error as db_err:
-                print(f"❌ DB Error logging session duration for {email}: {db_err}")
+                print(f"âŒ DB Error logging session duration for {email}: {db_err}")
             except Exception as log_e:
-                print(f"❌ Failed to log session duration for {email}: {log_e}")
+                print(f"âŒ Failed to log session duration for {email}: {log_e}")
             finally:
                 if cursor: cursor.close()
                 if conn and conn.is_connected(): conn.close()
 
         except ValueError:
-            print(f"⚠️ Could not parse login_time '{login_time_str}' for user {email}.")
+            print(f"âš ï¸ Could not parse login_time '{login_time_str}' for user {email}.")
         except Exception as outer_e:
-             print(f"❌ Unexpected error during session duration calculation for {email}: {outer_e}")
+             print(f"âŒ Unexpected error during session duration calculation for {email}: {outer_e}")
     else:
-        print("ℹ️ Logout initiated but no email or login_time found in session to log duration.")
+        print("â„¹ï¸ Logout initiated but no email or login_time found in session to log duration.")
 
     request.session.clear()
     response = RedirectResponse(url="/", status_code=302)
-    print("✅ Logout successful — redirecting to home")
+    print("âœ… Logout successful â€” redirecting to home")
     return response
 
 @app.get("/success", response_class=HTMLResponse)
@@ -805,123 +805,6 @@ async def profile_update(
 
     return RedirectResponse("/profile", status_code=303)
 
-# -- BILLING HISTORY --
-
-@app.get("/billing", response_class=HTMLResponse)
-async def billing_history(request: Request):
-    user_email = request.session.get("user_id")
-    logger.info(f"Billing history page accessed by user: {user_email if user_email else 'Guest'}")
-    
-    if not user_email:
-        logger.info("User not logged in, redirecting to login.")
-        return RedirectResponse("/login", status_code=303)
-
-    conn = None
-    cursor = None
-    try:
-        # 1) Fetch stripe_customer_id from your DB
-        conn = mysql.connector.connect(
-            host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
-        )
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT stripe_customer_id FROM users WHERE email=%s", (user_email,))
-        row = cursor.fetchone()
-        logger.debug(f"Retrieved Stripe customer data for {user_email}")
-        
-    except mysql.connector.Error as err:
-        logger.error(f"Database error retrieving Stripe customer ID for {user_email}: {err}")
-        row = None
-    except Exception as e:
-        logger.error(f"Unexpected error retrieving Stripe customer ID for {user_email}: {e}")
-        row = None
-    finally:
-        if cursor: cursor.close()
-        if conn and conn.is_connected(): conn.close()
-
-    if not row or not row.get("stripe_customer_id"):
-        logger.info(f"No Stripe customer ID found for user {user_email}")
-        return templates.TemplateResponse("billing.html", {
-            "request": request,
-            "subscription": None,
-            "next_invoice_date": None,
-            "portal_url": None,
-            "invoices": []
-        })
-
-    cust_id = row["stripe_customer_id"]
-    subscription = None
-    next_invoice_date = None
-    portal_url = None
-    invoices = []
-
-    try:
-        # 2) Current Subscription
-        logger.debug(f"Fetching subscription data for customer_id: {cust_id}")
-        subs = stripe.Subscription.list(customer=cust_id, status="all", limit=1).data
-        current_sub = subs[0] if subs else None
-        
-        if current_sub:
-            plan_item = current_sub["items"]["data"][0]["plan"]
-            subscription = {
-                "plan_name": plan_item.get("nickname", plan_item["id"]),
-                "status": current_sub["status"],
-                "current_period_end": datetime.fromtimestamp(
-                    current_sub["current_period_end"]
-                ).strftime("%Y-%m-%d")
-            }
-            logger.debug(f"Found active subscription for {user_email}: {subscription['plan_name']}")
-
-        # 3) Next Upcoming Invoice
-        try:
-            logger.debug(f"Fetching upcoming invoice for customer_id: {cust_id}")
-            upcoming = stripe.Invoice.upcoming(customer=cust_id)
-            next_invoice_date = datetime.fromtimestamp(
-                upcoming.next_payment_attempt or upcoming.period_end
-            ).strftime("%Y-%m-%d")
-            logger.debug(f"Next invoice date for {user_email}: {next_invoice_date}")
-        except stripe.error.InvalidRequestError as inv_err:
-            logger.info(f"No upcoming invoice for {user_email}: {inv_err}")
-            next_invoice_date = None
-
-        # 4) Customer Portal Link
-        logger.debug(f"Creating customer portal session for {user_email}")
-        portal_session = stripe.billing_portal.Session.create(
-            customer=cust_id,
-            return_url=STRIPE_PORTAL_RETURN_URL
-        )
-        portal_url = portal_session.url
-        logger.debug(f"Generated customer portal URL for {user_email}")
-
-        # 5) Past Invoices
-        logger.debug(f"Fetching invoice history for customer_id: {cust_id}")
-        stripe_invs = stripe.Invoice.list(customer=cust_id, limit=100).data
-        
-        invoices = [
-            {
-                "date": datetime.fromtimestamp(inv.created).strftime("%Y-%m-%d"),
-                "amount": f"{inv.amount_paid/100:.2f} {inv.currency.upper()}",
-                "status": inv.status,
-                "pdf": inv.invoice_pdf
-            }
-            for inv in stripe_invs
-        ]
-        
-        logger.info(f"Retrieved {len(invoices)} invoices for user {user_email}")
-        
-    except stripe.error.StripeError as stripe_err:
-        logger.error(f"Stripe API error for user {user_email}: {stripe_err}")
-    except Exception as e:
-        logger.error(f"Unexpected error fetching billing data for user {user_email}: {e}", exc_info=True)
-
-    return templates.TemplateResponse("billing.html", {
-        "request": request,
-        "subscription": subscription,
-        "next_invoice_date": next_invoice_date,
-        "portal_url": portal_url,
-        "invoices": invoices
-    })
-
 
 # --- REMOVE Forgot Username Routes ---
 
@@ -1010,10 +893,10 @@ async def ban_user(request: Request, email: str = Form(...)):
 async def disable_user(request: Request, email: str = Form(...)):
     admin_email = verify_admin(request)
     if update_user_status(email, "is_disabled", True):
-         print(f"✅ User '{email}' disabled successfully by {admin_email}.")
+         print(f"âœ… User '{email}' disabled successfully by {admin_email}.")
          log_action(admin_email, "ADMIN_DISABLE_USER", f"Target: {email}")
     else:
-         print(f"⚠️ Failed to disable user '{email}' by {admin_email}.")
+         print(f"âš ï¸ Failed to disable user '{email}' by {admin_email}.")
          log_action(admin_email, "ADMIN_DISABLE_USER_FAILURE", f"Target: {email}")
     return RedirectResponse("/admin", status_code=302)
 
@@ -1021,10 +904,10 @@ async def disable_user(request: Request, email: str = Form(...)):
 async def enable_user(request: Request, email: str = Form(...)):
     admin_email = verify_admin(request)
     if update_user_status(email, "is_disabled", False):
-        print(f"✅ User '{email}' enabled successfully by {admin_email}.")
+        print(f"âœ… User '{email}' enabled successfully by {admin_email}.")
         log_action(admin_email, "ADMIN_ENABLE_USER", f"Target: {email}")
     else:
-        print(f"⚠️ Failed to enable user '{email}' by {admin_email}.")
+        print(f"âš ï¸ Failed to enable user '{email}' by {admin_email}.")
         log_action(admin_email, "ADMIN_ENABLE_USER_FAILURE", f"Target: {email}")
     return RedirectResponse("/admin", status_code=302)
 
@@ -1034,10 +917,10 @@ async def unban_user(request: Request, email: str = Form(...)):
     admin_email = verify_admin(request)
     target_email = email
     if update_user_status(email, "is_banned", False):
-        print(f"✅ User '{email}' unbanned successfully by {admin_email}.")
+        print(f"âœ… User '{email}' unbanned successfully by {admin_email}.")
         log_action(admin_email, "unban_user", f"Unbanned user: {target_email}")
     else:
-        print(f"⚠️ Failed to unban user '{email}' by {admin_email}.")
+        print(f"âš ï¸ Failed to unban user '{email}' by {admin_email}.")
         log_action(admin_email, "ADMIN_UNBAN_USER_FAILURE", f"Target: {target_email}")
     return RedirectResponse("/admin", status_code=302)
 
@@ -1051,7 +934,7 @@ async def reset_user_password(
     admin_email = verify_admin(request)
 
     if len(new_password) < 8:
-        print(f"⚠️ Admin password reset failed for '{email}': Password too short.")
+        print(f"âš ï¸ Admin password reset failed for '{email}': Password too short.")
         log_action(admin_email, "ADMIN_RESET_PASSWORD_FAILURE", f"Target: {email}, Reason: Password too short")
         return RedirectResponse("/admin", status_code=302)
 
@@ -1073,15 +956,15 @@ async def reset_user_password(
         conn.commit()
 
         if cursor.rowcount > 0:
-             print(f"🔐 Admin reset password for {email}")
+             print(f"ðŸ” Admin reset password for {email}")
              success = True
         else:
-             print(f"⚠️ Admin password reset: User {email} not found or DB error.")
+             print(f"âš ï¸ Admin password reset: User {email} not found or DB error.")
 
     except mysql.connector.Error as err:
-        print(f"🔥 DB Error during admin password reset for {email}: {err}")
+        print(f"ðŸ”¥ DB Error during admin password reset for {email}: {err}")
     except Exception as e:
-        print(f"🔥 Unexpected error during admin password reset for {email}: {e}")
+        print(f"ðŸ”¥ Unexpected error during admin password reset for {email}: {e}")
     finally:
         if cursor: cursor.close()
         if conn and conn.is_connected(): conn.close()
@@ -1162,10 +1045,10 @@ async def view_user_details(email: str, request: Request):
         reset_activity_count = result['count'] if result else 0
 
     except mysql.connector.Error as err:
-        print(f"🔥 DB Error fetching user details for {email}: {err}")
+        print(f"ðŸ”¥ DB Error fetching user details for {email}: {err}")
         raise HTTPException(status_code=500, detail="Database error fetching user details.")
     except Exception as e:
-        print(f"🔥 Unexpected error fetching user details for {email}: {e}")
+        print(f"ðŸ”¥ Unexpected error fetching user details for {email}: {e}")
         raise HTTPException(status_code=500, detail="Unexpected error fetching user details.")
     finally:
         if cursor: cursor.close()
@@ -1209,10 +1092,10 @@ async def churn_report(request: Request):
                 user['timestamp_formatted'] = user['timestamp'].strftime('%Y-%m-%d %H:%M:%S UTC')
 
     except mysql.connector.Error as err:
-        print(f"🔥 DB Error fetching churn report: {err}")
+        print(f"ðŸ”¥ DB Error fetching churn report: {err}")
         raise HTTPException(status_code=500, detail="Database error fetching churn report.")
     except Exception as e:
-        print(f"🔥 Unexpected error fetching churn report: {e}")
+        print(f"ðŸ”¥ Unexpected error fetching churn report: {e}")
         raise HTTPException(status_code=500, detail="Unexpected error fetching churn report.")
     finally:
         if cursor: cursor.close()
@@ -1254,13 +1137,13 @@ async def export_users(request: Request):
         """)
         rows = cursor.fetchall()
         headers = [i[0] for i in cursor.description]
-        print(f"📊 Found {len(rows)} users for export.")
+        print(f"ðŸ“Š Found {len(rows)} users for export.")
 
     except mysql.connector.Error as err:
-        print(f"🔥 DB Error during user export: {err}")
+        print(f"ðŸ”¥ DB Error during user export: {err}")
         raise HTTPException(status_code=500, detail="Database error during export.")
     except Exception as e:
-        print(f"🔥 Unexpected error during user export: {e}")
+        print(f"ðŸ”¥ Unexpected error during user export: {e}")
         raise HTTPException(status_code=500, detail="Unexpected error during export.")
     finally:
         if cursor: cursor.close()
@@ -1291,7 +1174,7 @@ async def export_users(request: Request):
             formatted_row = ["" if item is None else item for item in formatted_row]
 
         except ValueError as ve:
-            print(f"⚠️ Error finding column index during CSV formatting: {ve}")
+            print(f"âš ï¸ Error finding column index during CSV formatting: {ve}")
             formatted_row = ["" if item is None else item for item in formatted_row]
 
         writer.writerow(formatted_row)
