@@ -988,17 +988,23 @@ async def billing(request: Request):
             cursor = conn.cursor(dictionary=True)
             cursor.execute("SELECT current_period_end FROM users WHERE email=%s", (user_email,))
             user_data = cursor.fetchone()
-            
-            if user_data and user_data.get("current_period_end"):
-                if isinstance(user_data["current_period_end"], (int, float)):
-                    # If it's stored as a timestamp
-                    period_end = datetime.fromtimestamp(user_data["current_period_end"]).strftime("%Y-%m-%d")
-                elif isinstance(user_data["current_period_end"], datetime):
-                    # If it's already a datetime object
-                    period_end = user_data["current_period_end"].strftime("%Y-%m-%d")
-                elif isinstance(user_data["current_period_end"], str):
-                    # If it's already a formatted string
-                    period_end = user_data["current_period_end"]
+              if user_data and user_data.get("current_period_end"):
+                try:
+                    if isinstance(user_data["current_period_end"], (int, float)):
+                        # If it's stored as a timestamp
+                        period_end = datetime.fromtimestamp(user_data["current_period_end"]).strftime("%Y-%m-%d")
+                    elif isinstance(user_data["current_period_end"], datetime):
+                        # If it's already a datetime object
+                        period_end = user_data["current_period_end"].strftime("%Y-%m-%d")
+                    elif isinstance(user_data["current_period_end"], str):
+                        # If it's already a formatted string
+                        period_end = user_data["current_period_end"]
+                    else:
+                        logger.warning(f"Unrecognized current_period_end type: {type(user_data['current_period_end'])}")
+                        period_end = str(user_data["current_period_end"])
+                except Exception as date_err:
+                    logger.error(f"Error formatting current_period_end: {date_err}")
+                    period_end = "Not available"
         except Exception as e:
             logger.error(f"Error retrieving period_end from database for {user_email}: {e}")
         finally:
@@ -1566,12 +1572,20 @@ async def cancel_subscription(request: Request):
         if not row or not row.get("stripe_customer_id") or not row.get("subscription_id"):
             logger.warning(f"No valid subscription information found for user {user_email}")
             return RedirectResponse("/billing?error=no_subscription", status_code=303)
-        
-        # Cancel the subscription via Stripe API
+          # Cancel the subscription via Stripe API
         try:
-            subscription = stripe.Subscription.retrieve(row["subscription_id"])
+            subscription_id = row["subscription_id"]
+            if not subscription_id:
+                logger.error(f"Empty subscription_id for user {user_email}")
+                return RedirectResponse("/billing?error=no_subscription", status_code=303)
+                
+            subscription = stripe.Subscription.retrieve(subscription_id)
+            if not subscription:
+                logger.error(f"Could not retrieve subscription {subscription_id} for user {user_email}")
+                return RedirectResponse("/billing?error=stripe_error", status_code=303)
+                
             stripe.Subscription.modify(
-                row["subscription_id"],
+                subscription_id,
                 cancel_at_period_end=True
             )
             
@@ -1601,4 +1615,33 @@ async def cancel_subscription(request: Request):
     finally:
         if cursor: cursor.close()
         if conn and conn.is_connected(): conn.close()
+
+@app.get("/billing-debug", response_class=HTMLResponse)
+async def billing_debug(request: Request):
+    """A simplified version of the billing route for debugging"""
+    user_email = request.session.get("user_id")
+    if not user_email:
+        return RedirectResponse("/login", status_code=303)
+
+    # Check premium status
+    is_premium = request.session.get("is_premium", False)
+    
+    # Create a simple subscription object for any premium user
+    if is_premium:
+        subscription = {
+            "plan_name": "Premium Plan (Debug)",
+            "status": "active",
+            "current_period_end": "Not available"
+        }
+    else:
+        subscription = None
+    
+    # Return a simple version of the billing page
+    return templates.TemplateResponse("billing.html", {
+        "request": request,
+        "subscription": subscription,
+        "next_invoice_date": None,
+        "portal_url": None,
+        "invoices": []
+    })
 
