@@ -25,7 +25,7 @@ from stripe_webhook import router as stripe_webhook_router
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
 # for creating customer portal sessions
-STRIPE_PORTAL_RETURN_URL = os.getenv("STRIPE_PORTAL_RETURN_URL")
+STRIPE_PORTAL_RETURN_URL = os.getenv("STRIPE_PORTAL_RETURN_URL", "https://cricketstatspack.com/billing")
 
 # Determine log level from environment variable or default to DEBUG
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG").upper()
