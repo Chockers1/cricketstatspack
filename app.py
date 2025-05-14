@@ -16,9 +16,13 @@ from io import StringIO
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+import stripe
 from auth_utils import verify_user, create_user, get_admin_stats, update_user_status, admin_reset_password, log_action
 from stripe_payments import router as stripe_payments_router
 from stripe_webhook import router as stripe_webhook_router
+
+# load your Stripe secret key from .env
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
 # Determine log level from environment variable or default to DEBUG
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG").upper()
@@ -317,9 +321,7 @@ async def dashboard(request: Request):
     logger.info(f"Dashboard accessed by user: {user_email if user_email else 'Guest'}")
     if not user_email:
         logger.info("User not logged in, redirecting to login.")
-        return RedirectResponse("/login", status_code=303)
-
-    try:
+        return RedirectResponse("/login", status_code=303)    try:
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"),
             user=os.getenv("DB_USER"),
@@ -333,14 +335,14 @@ async def dashboard(request: Request):
         if user:
             request.session["is_premium"] = bool(user.get("is_premium"))
         else:
-            print(f"⚠️ User with email {email} found in session but not in DB during dashboard load.")
+            print(f"⚠️ User with email {user_email} found in session but not in DB during dashboard load.")
             request.session["is_premium"] = False
 
     except mysql.connector.Error as err:
-        print(f"🔥 Dashboard DB check failed for {email}: {err}")
+        print(f"🔥 Dashboard DB check failed for {user_email}: {err}")
         request.session["is_premium"] = request.session.get("is_premium", False)
     except Exception as e:
-        print(f"🔥 Dashboard DB check failed unexpectedly for {email}: {e}")
+        print(f"🔥 Dashboard DB check failed unexpectedly for {user_email}: {e}")
         request.session["is_premium"] = request.session.get("is_premium", False)
     finally:
         if cursor:
@@ -713,6 +715,110 @@ async def change_password_submit(
         if conn and conn.is_connected(): conn.close()
 
 # --- End Change Password Routes ---
+
+# -- PROFILE VIEW & EDIT --
+
+@app.get("/profile", response_class=HTMLResponse)
+async def profile_view(request: Request):
+    user_email = request.session.get("user_id")
+    if not user_email:
+        return RedirectResponse("/login", status_code=303)
+
+    conn = mysql.connector.connect(
+        host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
+    )
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT email, display_name, notify_newsletter
+          FROM users
+         WHERE email = %s
+    """, (user_email,))
+    user = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    return templates.TemplateResponse("profile.html", {
+        "request": request,
+        "user": user or {}
+    })
+
+
+@app.post("/profile")
+async def profile_update(
+    request: Request,
+    display_name: str = Form(None),
+    notify_newsletter: Optional[bool] = Form(False)
+):
+    user_email = request.session.get("user_id")
+    if not user_email:
+        return RedirectResponse("/login", status_code=303)
+
+    conn = mysql.connector.connect(
+        host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
+    )
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE users
+           SET display_name      = %s,
+               notify_newsletter = %s
+         WHERE email             = %s
+    """, (display_name, int(bool(notify_newsletter)), user_email))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    log_action(user_email, "PROFILE_UPDATED",
+               f"name={display_name}, newsletter={notify_newsletter}")
+
+    return RedirectResponse("/profile", status_code=303)
+
+# -- BILLING HISTORY --
+
+@app.get("/billing", response_class=HTMLResponse)
+async def billing_history(request: Request):
+    user_email = request.session.get("user_id")
+    if not user_email:
+        return RedirectResponse("/login", status_code=303)
+
+    # fetch Stripe customer ID from your DB
+    conn = mysql.connector.connect(
+        host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
+    )
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT stripe_customer_id
+          FROM users
+         WHERE email = %s
+    """, (user_email,))
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not row or not row.get("stripe_customer_id"):
+        return templates.TemplateResponse("billing.html", {
+            "request": request, "invoices": []
+        })
+
+    cust_id = row["stripe_customer_id"]
+    stripe_invs = stripe.Invoice.list(customer=cust_id, limit=100).data
+
+    invoices = [
+        {
+            "date": datetime.fromtimestamp(inv.created).strftime("%Y-%m-%d"),
+            "amount": f"{inv.amount_paid/100:.2f} {inv.currency.upper()}",
+            "status": inv.status,
+            "pdf": inv.invoice_pdf
+        }
+        for inv in stripe_invs
+    ]
+
+    return templates.TemplateResponse("billing.html", {
+        "request": request, "invoices": invoices
+    })
+
 
 # --- REMOVE Forgot Username Routes ---
 
