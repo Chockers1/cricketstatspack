@@ -806,10 +806,9 @@ async def profile_update(
 # -- BILLING HISTORY --
 
 @app.get("/billing", response_class=HTMLResponse)
-async def billing_history(request: Request):
-    user_email = request.session.get("user_id")
-    logger.info(f"Billing history page accessed by user: {user_email if user_email else 'Guest'}")
-    
+async def billing(request: Request):
+    """Display billing history and subscription info"""
+    user_email = request.session.get("user_id")  # This will hold the email now
     if not user_email:
         logger.info("User not logged in, redirecting to login.")
         return RedirectResponse("/login", status_code=303)
@@ -866,7 +865,8 @@ async def billing_history(request: Request):
             finally:
                 if cursor: cursor.close()
                 if conn and conn.is_connected(): conn.close()
-          # Create dummy subscription for premium users with missing Stripe info
+        
+        # Create dummy subscription for premium users with missing Stripe info
         if is_premium:
             logger.warning(f"Creating fallback subscription display for premium user {user_email}")
             subscription = {
@@ -914,7 +914,8 @@ async def billing_history(request: Request):
                 plan_item = current_sub["items"]["data"][0]["plan"]
                 subscription = {
                     "plan_name": plan_item.get("nickname", plan_item["id"]),
-                    "status": current_sub["status"],                    "current_period_end": datetime.fromtimestamp(
+                    "status": current_sub["status"],
+                    "current_period_end": datetime.fromtimestamp(
                         current_sub["current_period_end"]
                     ).strftime("%Y-%m-%d")
                 }
@@ -972,6 +973,16 @@ async def billing_history(request: Request):
         logger.error(f"Stripe API error for user {user_email}: {str(stripe_err)}")
     except Exception as e:
         logger.error(f"Unexpected error fetching billing data for user {user_email}: {str(e)}", exc_info=True)
+    
+    # This is the key fix - ensure premium users always have a subscription object
+    # Even if Stripe API calls fail or return no data
+    if is_premium and subscription is None:
+        logger.warning(f"Fixing display for premium user with no subscription data: {user_email}")
+        subscription = {
+            "plan_name": "Premium Plan",
+            "status": "active",
+            "current_period_end": "Not available"
+        }
 
     return templates.TemplateResponse("billing.html", {
         "request": request,
