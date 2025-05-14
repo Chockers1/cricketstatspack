@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Cancel Subscription{% endblock %}
+{% block content %}
+  <h2>Cancel Premium Subscription</h2>
+  
+  <div class="alert alert-warning">
+    <h4>Are you sure you want to cancel your premium subscription?</h4>
+    <p>If you cancel, you will:</p>
+    <ul>
+      <li>Continue to have premium access until your current billing period ends</li>
+      <li>Not be charged for the next billing period</li>
+      <li>Lose access to premium features when your current period ends</li>
+    </ul>
+  </div>
+  
+  <div class="d-flex mt-4">
+    <a href="/billing" class="btn btn-secondary me-3">No, Keep My Subscription</a>
+    <a href="/cancel-subscription?confirm=true" class="btn btn-danger">Yes, Cancel My Subscription</a>
+  </div>
+{% endblock %}

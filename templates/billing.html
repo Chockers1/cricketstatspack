@@ -2,22 +2,50 @@
 {% block title %}Billing History{% endblock %}
 {% block content %}
   <h2>Billing & Subscription</h2>
+  
+  {% if request.query_params.get('message') == 'cancellation_scheduled' %}
+    <div class="alert alert-success mb-4">
+      Your subscription has been scheduled for cancellation at the end of your current billing period.
+      You'll continue to have premium access until then.
+    </div>
+  {% endif %}
+  
+  {% if request.query_params.get('error') %}
+    <div class="alert alert-danger mb-4">
+      {% if request.query_params.get('error') == 'no_subscription' %}
+        No active subscription found to cancel.
+      {% elif request.query_params.get('error') == 'stripe_error' %}
+        There was a problem with our payment provider. Please try again later.
+      {% elif request.query_params.get('error') == 'db_error' %}
+        A database error occurred. Please try again later.
+      {% else %}
+        An unexpected error occurred. Please try again later.
+      {% endif %}
+    </div>
+  {% endif %}
   {% if subscription %}
     <div class="card mb-4 p-3">
-      <h3>Current Subscription</h3>
-      <p>
+      <h3>Current Subscription</h3>      <p>
         <strong>Plan:</strong> {{ subscription.plan_name }}<br/>
         <strong>Status:</strong> {{ subscription.status|capitalize }}<br/>
         <strong>Period ends:</strong> {{ subscription.current_period_end }}<br/>
         {% if next_invoice_date %}
           <strong>Next invoice date:</strong> {{ next_invoice_date }}<br/>
         {% endif %}
-      </p>
-      {% if portal_url %}
-        <a class="btn btn-secondary" href="{{ portal_url }}" target="_blank">
-          Manage Subscription
-        </a>
-      {% endif %}
+      </p>      <div class="button-group">
+        {% if portal_url %}
+          <a class="btn btn-secondary me-2" href="{{ portal_url }}" target="_blank">
+            Manage Subscription
+          </a>
+        {% endif %}
+        {% if subscription.status == 'active' %}
+          <a class="btn btn-danger" href="/cancel-subscription">
+            Cancel Subscription
+          </a>
+        {% elif subscription.status == 'canceled' %}
+          <span class="badge bg-warning text-dark">Will cancel at period end</span>
+        {% endif %}
+      </div>
     </div>
   {% else %}
     <p>No active subscription on file.</p>
