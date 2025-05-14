@@ -319,9 +319,12 @@ async def subscribe_page(request: Request):
 async def dashboard(request: Request):
     user_email = request.session.get("user_id")
     logger.info(f"Dashboard accessed by user: {user_email if user_email else 'Guest'}")
+    
     if not user_email:
         logger.info("User not logged in, redirecting to login.")
-        return RedirectResponse("/login", status_code=303)    try:
+        return RedirectResponse("/login", status_code=303)
+    
+    try:
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"),
             user=os.getenv("DB_USER"),
@@ -335,14 +338,14 @@ async def dashboard(request: Request):
         if user:
             request.session["is_premium"] = bool(user.get("is_premium"))
         else:
-            print(f"⚠️ User with email {user_email} found in session but not in DB during dashboard load.")
+            logger.warning(f"User with email {user_email} found in session but not in DB during dashboard load.")
             request.session["is_premium"] = False
 
     except mysql.connector.Error as err:
-        print(f"🔥 Dashboard DB check failed for {user_email}: {err}")
+        logger.error(f"Dashboard DB check failed for {user_email}: {err}")
         request.session["is_premium"] = request.session.get("is_premium", False)
     except Exception as e:
-        print(f"🔥 Dashboard DB check failed unexpectedly for {user_email}: {e}")
+        logger.error(f"Dashboard DB check failed unexpectedly for {user_email}: {e}")
         request.session["is_premium"] = request.session.get("is_premium", False)
     finally:
         if cursor:
@@ -721,22 +724,34 @@ async def change_password_submit(
 @app.get("/profile", response_class=HTMLResponse)
 async def profile_view(request: Request):
     user_email = request.session.get("user_id")
+    logger.info(f"Profile page accessed by user: {user_email if user_email else 'Guest'}")
+    
     if not user_email:
+        logger.info("User not logged in, redirecting to login.")
         return RedirectResponse("/login", status_code=303)
 
-    conn = mysql.connector.connect(
-        host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
-    )
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("""
-        SELECT email, display_name, notify_newsletter
-          FROM users
-         WHERE email = %s
-    """, (user_email,))
-    user = cursor.fetchone()
-    cursor.close()
-    conn.close()
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT email, display_name, notify_newsletter
+              FROM users
+             WHERE email = %s
+        """, (user_email,))
+        user = cursor.fetchone()
+        logger.debug(f"Profile data retrieved for user: {user_email}")
+    except mysql.connector.Error as err:
+        logger.error(f"Database error retrieving profile data for {user_email}: {err}")
+        user = None
+    except Exception as e:
+        logger.error(f"Unexpected error retrieving profile data for {user_email}: {e}")
+        user = None
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
 
     return templates.TemplateResponse("profile.html", {
         "request": request,
@@ -751,26 +766,39 @@ async def profile_update(
     notify_newsletter: Optional[bool] = Form(False)
 ):
     user_email = request.session.get("user_id")
+    logger.info(f"Profile update request for user: {user_email}")
+    
     if not user_email:
+        logger.info("User not logged in, redirecting to login.")
         return RedirectResponse("/login", status_code=303)
 
-    conn = mysql.connector.connect(
-        host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
-    )
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE users
-           SET display_name      = %s,
-               notify_newsletter = %s
-         WHERE email             = %s
-    """, (display_name, int(bool(notify_newsletter)), user_email))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE users
+               SET display_name      = %s,
+                   notify_newsletter = %s
+             WHERE email             = %s
+        """, (display_name, int(bool(notify_newsletter)), user_email))
+        conn.commit()
+        
+        logger.info(f"Profile updated successfully for user: {user_email}")
+        logger.debug(f"Profile update details: name='{display_name}', newsletter={notify_newsletter}")
+    except mysql.connector.Error as err:
+        logger.error(f"Database error updating profile for {user_email}: {err}")
+    except Exception as e:
+        logger.error(f"Unexpected error updating profile for {user_email}: {e}")
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
 
+    # Log the action to audit_logs table
     log_action(user_email, "PROFILE_UPDATED",
-               f"name={display_name}, newsletter={notify_newsletter}")
+               f"name='{display_name}', newsletter={notify_newsletter}")
 
     return RedirectResponse("/profile", status_code=303)
 
@@ -779,41 +807,70 @@ async def profile_update(
 @app.get("/billing", response_class=HTMLResponse)
 async def billing_history(request: Request):
     user_email = request.session.get("user_id")
+    logger.info(f"Billing history page accessed by user: {user_email if user_email else 'Guest'}")
+    
     if not user_email:
+        logger.info("User not logged in, redirecting to login.")
         return RedirectResponse("/login", status_code=303)
 
-    # fetch Stripe customer ID from your DB
-    conn = mysql.connector.connect(
-        host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
-    )
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("""
-        SELECT stripe_customer_id
-          FROM users
-         WHERE email = %s
-    """, (user_email,))
-    row = cursor.fetchone()
-    cursor.close()
-    conn.close()
+    conn = None
+    cursor = None
+    try:
+        # fetch Stripe customer ID from your DB
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT stripe_customer_id
+              FROM users
+             WHERE email = %s
+        """, (user_email,))
+        row = cursor.fetchone()
+        logger.debug(f"Retrieved Stripe customer data for {user_email}")
+        
+    except mysql.connector.Error as err:
+        logger.error(f"Database error retrieving Stripe customer ID for {user_email}: {err}")
+        row = None
+    except Exception as e:
+        logger.error(f"Unexpected error retrieving Stripe customer ID for {user_email}: {e}")
+        row = None
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
 
     if not row or not row.get("stripe_customer_id"):
+        logger.info(f"No Stripe customer ID found for user {user_email}")
         return templates.TemplateResponse("billing.html", {
             "request": request, "invoices": []
         })
 
-    cust_id = row["stripe_customer_id"]
-    stripe_invs = stripe.Invoice.list(customer=cust_id, limit=100).data
-
-    invoices = [
-        {
-            "date": datetime.fromtimestamp(inv.created).strftime("%Y-%m-%d"),
-            "amount": f"{inv.amount_paid/100:.2f} {inv.currency.upper()}",
-            "status": inv.status,
-            "pdf": inv.invoice_pdf
-        }
-        for inv in stripe_invs
-    ]
+    # Fetch invoices from Stripe
+    try:
+        cust_id = row["stripe_customer_id"]
+        logger.debug(f"Fetching Stripe invoices for customer_id: {cust_id}")
+        
+        stripe_invs = stripe.Invoice.list(customer=cust_id, limit=100).data
+        
+        invoices = [
+            {
+                "date": datetime.fromtimestamp(inv.created).strftime("%Y-%m-%d"),
+                "amount": f"{inv.amount_paid/100:.2f} {inv.currency.upper()}",
+                "status": inv.status,
+                "pdf": inv.invoice_pdf
+            }
+            for inv in stripe_invs
+        ]
+        
+        logger.info(f"Retrieved {len(invoices)} invoices for user {user_email}")
+        
+    except stripe.error.StripeError as stripe_err:
+        logger.error(f"Stripe API error for user {user_email}: {stripe_err}")
+        invoices = []
+    except Exception as e:
+        logger.error(f"Unexpected error fetching Stripe invoices for user {user_email}: {e}")
+        invoices = []
 
     return templates.TemplateResponse("billing.html", {
         "request": request, "invoices": invoices
@@ -879,23 +936,28 @@ async def admin_dashboard(request: Request):
 def verify_admin(request: Request):
     user_email = request.session.get("user_id")
     admin_email_env = os.getenv("ADMIN_EMAIL", "r.taylor289@gmail.com")
+    
     if user_email != admin_email_env:
-        print(f"🚨 Unauthorized access attempt to admin action by: {user_email or 'Not logged in'}")
+        logger.warning(f"Unauthorized access attempt to admin action by: {user_email or 'Not logged in'}")
         log_action(user_email or "UNKNOWN", "ADMIN_ACTION_UNAUTHORIZED", f"Attempted action on path: {request.url.path}")
         raise HTTPException(status_code=403, detail="Access denied")
-    print(f"✅ Admin action authorized for: {user_email}")
+    
+    logger.info(f"Admin action authorized for: {user_email}")
     return user_email
 
 @app.post("/admin/ban")
 async def ban_user(request: Request, email: str = Form(...)):
     admin_email = verify_admin(request)
     target_email = email
+    logger.info(f"Admin ban action initiated by {admin_email} against {target_email}")
+    
     if update_user_status(email, "is_banned", True):
-        print(f"✅ User '{email}' banned successfully by {admin_email}.")
+        logger.info(f"User '{email}' banned successfully by {admin_email}.")
         log_action(admin_email, "ban_user", f"Banned user: {target_email}")
     else:
-        print(f"⚠️ Failed to ban user '{email}' by {admin_email}.")
+        logger.error(f"Failed to ban user '{email}' by {admin_email}.")
         log_action(admin_email, "ADMIN_BAN_USER_FAILURE", f"Target: {target_email}")
+    
     return RedirectResponse("/admin", status_code=302)
 
 @app.post("/admin/disable")
