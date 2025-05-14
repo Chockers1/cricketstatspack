@@ -843,7 +843,7 @@ async def billing(request: Request):
     if not row or not row.get("stripe_customer_id"):
         logger.info(f"No Stripe customer ID found for user {user_email}")
         
-        # If the user is marked as premium but has no Stripe customer ID,
+    # If the user is marked as premium but has no Stripe customer ID,
         # fetch additional information for debugging
         if is_premium:
             logger.warning(f"User {user_email} marked as premium but has no Stripe customer ID")
@@ -874,11 +874,32 @@ async def billing(request: Request):
                 "status": "active",
                 "current_period_end": "Not available"
             }
+            
+            # Try to generate a Stripe Customer Portal URL even for users without a customer ID
+            portal_url = None
+            try:
+                # Search for a customer with the given email
+                customers = stripe.Customer.list(email=user_email, limit=1).data
+                if customers:
+                    cust_id = customers[0].id
+                    logger.info(f"Found Stripe customer by email search: {cust_id}")
+                    
+                    # Create portal session
+                    portal_session = stripe.billing_portal.Session.create(
+                        customer=cust_id,
+                        return_url=STRIPE_PORTAL_RETURN_URL
+                    )
+                    portal_url = portal_session.url
+                    logger.info(f"Generated portal URL for user {user_email} via email search")
+            except Exception as e:
+                logger.error(f"Could not generate portal URL for premium user {user_email}: {e}")
+                # Continue without portal URL
+                
             return templates.TemplateResponse("billing.html", {
                 "request": request,
                 "subscription": subscription,
                 "next_invoice_date": None,
-                "portal_url": None,
+                "portal_url": portal_url,
                 "invoices": []
             })
         else:
@@ -1625,15 +1646,36 @@ async def billing_debug(request: Request):
             "status": "active",
             "current_period_end": "Not available"
         }
+        
+        # Try to get a portal URL for the user
+        portal_url = None
+        try:
+            # Search for a customer with the given email
+            customers = stripe.Customer.list(email=user_email, limit=1).data
+            if customers:
+                cust_id = customers[0].id
+                logger.info(f"Debug: Found Stripe customer by email search: {cust_id}")
+                
+                # Create portal session
+                portal_session = stripe.billing_portal.Session.create(
+                    customer=cust_id,
+                    return_url=STRIPE_PORTAL_RETURN_URL
+                )
+                portal_url = portal_session.url
+                logger.info(f"Debug: Generated portal URL for user {user_email}")
+        except Exception as e:
+            logger.error(f"Debug: Could not generate portal URL: {e}")
+            # Continue without portal URL
     else:
         subscription = None
+        portal_url = None
     
     # Return a simple version of the billing page
     return templates.TemplateResponse("billing.html", {
         "request": request,
         "subscription": subscription,
         "next_invoice_date": None,
-        "portal_url": None,
+        "portal_url": portal_url,
         "invoices": []
     })
 
