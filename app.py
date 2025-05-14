@@ -1572,20 +1572,12 @@ async def cancel_subscription(request: Request):
         if not row or not row.get("stripe_customer_id") or not row.get("subscription_id"):
             logger.warning(f"No valid subscription information found for user {user_email}")
             return RedirectResponse("/billing?error=no_subscription", status_code=303)
-          # Cancel the subscription via Stripe API
+        
+        # Cancel the subscription via Stripe API
         try:
-            subscription_id = row["subscription_id"]
-            if not subscription_id:
-                logger.error(f"Empty subscription_id for user {user_email}")
-                return RedirectResponse("/billing?error=no_subscription", status_code=303)
-                
-            subscription = stripe.Subscription.retrieve(subscription_id)
-            if not subscription:
-                logger.error(f"Could not retrieve subscription {subscription_id} for user {user_email}")
-                return RedirectResponse("/billing?error=stripe_error", status_code=303)
-                
+            subscription = stripe.Subscription.retrieve(row["subscription_id"])
             stripe.Subscription.modify(
-                subscription_id,
+                row["subscription_id"],
                 cancel_at_period_end=True
             )
             
