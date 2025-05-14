@@ -988,7 +988,7 @@ async def billing(request: Request):
             cursor = conn.cursor(dictionary=True)
             cursor.execute("SELECT current_period_end FROM users WHERE email=%s", (user_email,))
             user_data = cursor.fetchone()
-              if user_data and user_data.get("current_period_end"):
+            if user_data and user_data.get("current_period_end"):
                 try:
                     if isinstance(user_data["current_period_end"], (int, float)):
                         # If it's stored as a timestamp
