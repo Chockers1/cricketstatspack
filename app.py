@@ -866,8 +866,7 @@ async def billing_history(request: Request):
             finally:
                 if cursor: cursor.close()
                 if conn and conn.is_connected(): conn.close()
-        
-        # Create dummy subscription for premium users with missing Stripe info
+          # Create dummy subscription for premium users with missing Stripe info
         if is_premium:
             logger.warning(f"Creating fallback subscription display for premium user {user_email}")
             subscription = {
@@ -915,8 +914,7 @@ async def billing_history(request: Request):
                 plan_item = current_sub["items"]["data"][0]["plan"]
                 subscription = {
                     "plan_name": plan_item.get("nickname", plan_item["id"]),
-                    "status": current_sub["status"],
-                    "current_period_end": datetime.fromtimestamp(
+                    "status": current_sub["status"],                    "current_period_end": datetime.fromtimestamp(
                         current_sub["current_period_end"]
                     ).strftime("%Y-%m-%d")
                 }
@@ -1432,4 +1430,66 @@ async def stripe_webhook(request: Request):
         logger.error(f"Error handling Stripe event type {event.type if event else 'UNKNOWN'}: {e}", exc_info=True)
         # Return 500 so Stripe retries, but be cautious about retry storms for non-recoverable errors.
         return HTTPException(status_code=500, detail="Error processing webhook event")
+
+
+@app.get("/manage-subscription")
+async def manage_subscription(request: Request):
+    """Generate a Stripe portal session URL and redirect to it."""
+    user_email = request.session.get("user_id")
+    if not user_email:
+        logger.info("User not logged in, redirecting to login.")
+        return RedirectResponse("/login", status_code=303)
+    
+    logger.info(f"User {user_email} accessing subscription management")
+    
+    conn = None
+    cursor = None
+    try:
+        # Fetch stripe_customer_id from the database
+        conn = mysql.connector.connect(
+            host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
+        )
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT stripe_customer_id FROM users WHERE email=%s", (user_email,))
+        row = cursor.fetchone()
+        
+        if not row or not row.get("stripe_customer_id"):
+            logger.warning(f"No Stripe customer ID found for user {user_email}")
+            # No customer ID means they aren't set up in Stripe, redirect to billing or subscribe
+            is_premium = request.session.get("is_premium", False)
+            if is_premium:
+                logger.warning(f"Premium user {user_email} has no Stripe customer ID")
+                return RedirectResponse("/billing", status_code=303)
+            else:
+                logger.info(f"Non-premium user {user_email} redirected to subscribe page")
+                return RedirectResponse("/subscribe", status_code=303)
+        
+        cust_id = row["stripe_customer_id"]
+        
+        # Create Customer Portal session
+        logger.debug(f"Creating customer portal session for {user_email}")
+        portal_session = stripe.billing_portal.Session.create(
+            customer=cust_id,
+            return_url=STRIPE_PORTAL_RETURN_URL
+        )
+        
+        logger.info(f"Redirecting user {user_email} to Stripe Customer Portal")
+        return RedirectResponse(portal_session.url, status_code=303)
+        
+    except stripe.error.StripeError as stripe_err:
+        logger.error(f"Stripe API error for user {user_email}: {str(stripe_err)}")
+        return templates.TemplateResponse("error.html", {
+            "request": request,
+            "error_message": "There was an error connecting to our payment provider. Please try again later."
+        })
+    except Exception as e:
+        logger.error(f"Error generating customer portal for {user_email}: {str(e)}", exc_info=True)
+        return templates.TemplateResponse("error.html", {
+            "request": request, 
+            "error_message": "An unexpected error occurred. Please try again later."
+        })
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
 

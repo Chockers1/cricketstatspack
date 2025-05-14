@@ -2,7 +2,6 @@
 {% block title %}Billing History{% endblock %}
 {% block content %}
   <h2>Billing & Subscription</h2>
-
   {% if subscription %}
     <div class="card mb-4 p-3">
       <h3>Current Subscription</h3>
@@ -14,12 +13,15 @@
           <strong>Next invoice date:</strong> {{ next_invoice_date }}<br/>
         {% endif %}
       </p>
-      <a class="btn btn-secondary" href="{{ portal_url }}" target="_blank">
-        Manage Subscription
-      </a>
+      {% if portal_url %}
+        <a class="btn btn-secondary" href="{{ portal_url }}" target="_blank">
+          Manage Subscription
+        </a>
+      {% endif %}
     </div>
   {% else %}
     <p>No active subscription on file.</p>
+    <p><a href="/subscribe" class="btn btn-primary">Get Premium Access</a></p>
   {% endif %}
 
   <h2>Past Invoices</h2>
