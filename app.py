@@ -24,6 +24,9 @@ from stripe_webhook import router as stripe_webhook_router
 # load your Stripe secret key from .env
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
+# for creating customer portal sessions
+STRIPE_PORTAL_RETURN_URL = os.getenv("STRIPE_PORTAL_RETURN_URL")
+
 # Determine log level from environment variable or default to DEBUG
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG").upper()
 numeric_level = getattr(logging, LOG_LEVEL, logging.DEBUG)
@@ -816,17 +819,13 @@ async def billing_history(request: Request):
     conn = None
     cursor = None
     try:
-        # fetch Stripe customer ID from your DB
+        # 1) Fetch stripe_customer_id from your DB
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"),
             password=os.getenv("DB_PASS"), database=os.getenv("DB_NAME")
         )
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("""
-            SELECT stripe_customer_id
-              FROM users
-             WHERE email = %s
-        """, (user_email,))
+        cursor.execute("SELECT stripe_customer_id FROM users WHERE email=%s", (user_email,))
         row = cursor.fetchone()
         logger.debug(f"Retrieved Stripe customer data for {user_email}")
         
@@ -843,14 +842,59 @@ async def billing_history(request: Request):
     if not row or not row.get("stripe_customer_id"):
         logger.info(f"No Stripe customer ID found for user {user_email}")
         return templates.TemplateResponse("billing.html", {
-            "request": request, "invoices": []
+            "request": request,
+            "subscription": None,
+            "next_invoice_date": None,
+            "portal_url": None,
+            "invoices": []
         })
 
-    # Fetch invoices from Stripe
+    cust_id = row["stripe_customer_id"]
+    subscription = None
+    next_invoice_date = None
+    portal_url = None
+    invoices = []
+
     try:
-        cust_id = row["stripe_customer_id"]
-        logger.debug(f"Fetching Stripe invoices for customer_id: {cust_id}")
+        # 2) Current Subscription
+        logger.debug(f"Fetching subscription data for customer_id: {cust_id}")
+        subs = stripe.Subscription.list(customer=cust_id, status="all", limit=1).data
+        current_sub = subs[0] if subs else None
         
+        if current_sub:
+            plan_item = current_sub["items"]["data"][0]["plan"]
+            subscription = {
+                "plan_name": plan_item.get("nickname", plan_item["id"]),
+                "status": current_sub["status"],
+                "current_period_end": datetime.fromtimestamp(
+                    current_sub["current_period_end"]
+                ).strftime("%Y-%m-%d")
+            }
+            logger.debug(f"Found active subscription for {user_email}: {subscription['plan_name']}")
+
+        # 3) Next Upcoming Invoice
+        try:
+            logger.debug(f"Fetching upcoming invoice for customer_id: {cust_id}")
+            upcoming = stripe.Invoice.upcoming(customer=cust_id)
+            next_invoice_date = datetime.fromtimestamp(
+                upcoming.next_payment_attempt or upcoming.period_end
+            ).strftime("%Y-%m-%d")
+            logger.debug(f"Next invoice date for {user_email}: {next_invoice_date}")
+        except stripe.error.InvalidRequestError as inv_err:
+            logger.info(f"No upcoming invoice for {user_email}: {inv_err}")
+            next_invoice_date = None
+
+        # 4) Customer Portal Link
+        logger.debug(f"Creating customer portal session for {user_email}")
+        portal_session = stripe.billing_portal.Session.create(
+            customer=cust_id,
+            return_url=STRIPE_PORTAL_RETURN_URL
+        )
+        portal_url = portal_session.url
+        logger.debug(f"Generated customer portal URL for {user_email}")
+
+        # 5) Past Invoices
+        logger.debug(f"Fetching invoice history for customer_id: {cust_id}")
         stripe_invs = stripe.Invoice.list(customer=cust_id, limit=100).data
         
         invoices = [
@@ -867,13 +911,15 @@ async def billing_history(request: Request):
         
     except stripe.error.StripeError as stripe_err:
         logger.error(f"Stripe API error for user {user_email}: {stripe_err}")
-        invoices = []
     except Exception as e:
-        logger.error(f"Unexpected error fetching Stripe invoices for user {user_email}: {e}")
-        invoices = []
+        logger.error(f"Unexpected error fetching billing data for user {user_email}: {e}", exc_info=True)
 
     return templates.TemplateResponse("billing.html", {
-        "request": request, "invoices": invoices
+        "request": request,
+        "subscription": subscription,
+        "next_invoice_date": next_invoice_date,
+        "portal_url": portal_url,
+        "invoices": invoices
     })
 
 
