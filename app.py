@@ -813,12 +813,11 @@ async def billing(request: Request):
     user_email = request.session.get("user_id")
     if not user_email:
         logger.info("User not logged in, redirecting to login.")
-        return RedirectResponse("/login", status_code=303)
-
-    # First, check if the user has premium status in their session
+        return RedirectResponse("/login", status_code=303)    # First, check if the user has premium status in their session
     is_premium = request.session.get("is_premium", False)
     logger.info(f"User {user_email} has premium status: {is_premium}")
     
+    # Initialize variables
     conn = None
     cursor = None
     row = None
