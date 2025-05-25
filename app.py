@@ -732,7 +732,7 @@ async def profile_view(request: Request):
     if not user_email:
         logger.info("User not logged in, redirecting to login.")
         return RedirectResponse("/login", status_code=303)
-
+    
     try:
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"),
@@ -740,7 +740,8 @@ async def profile_view(request: Request):
         )
         cursor = conn.cursor(dictionary=True)
         cursor.execute("""
-            SELECT email, display_name, notify_newsletter
+            SELECT email, display_name, notify_newsletter, security_question_1, security_question_2,
+                   is_premium, subscription_type, subscription_status, created_at, current_period_end
               FROM users
              WHERE email = %s
         """, (user_email,))
