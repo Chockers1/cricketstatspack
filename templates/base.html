@@ -3,15 +3,7 @@
 <head>
     <title>{% block title %}Cricket Stats Pack{% endblock %}</title>
 </head>
-<body>    <nav>
-        <a href="/dashboard">Dashboard</a> |        {% if request.session.get('user_id') %}
-            <a href="/profile">My Profile</a> |
-            <a href="/billing">Billing</a> |
-            <a href="/logout">Logout</a>
-        {% else %}
-            <a href="/login">Login</a> |
-        {% endif %}
-    </nav>
+<body>
     <main>
         {% block content %}{% endblock %}
     </main>

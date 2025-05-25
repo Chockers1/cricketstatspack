@@ -1627,7 +1627,7 @@ async def cancel_subscription(request: Request):
             WHERE email = %s
         """, (user_email,))
         row = cursor.fetchone()
-          if not row or not row.get("stripe_customer_id") or not row.get("subscription_id"):
+        if not row or not row.get("stripe_customer_id") or not row.get("subscription_id"):
             logger.warning(f"No valid subscription information found for user {user_email}")
             return RedirectResponse("/billing?error=no_subscription", status_code=303)
         
