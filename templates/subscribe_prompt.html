@@ -1,13 +1,92 @@
-<!-- templates/subscribe_prompt.html -->
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Upgrade Required</title>
-</head>
-<body>
-    <h2>{{ message }}</h2>
-    <p>Don't have an account? <a href="/register">Register here</a></p>
-    <p>Already a user? <a href="/login">Log in</a></p>
-    <p><a href="/subscribe">{{ cta }}</a></p>
-</body>
-</html>
+{% extends "base.html" %}
+
+{% block title %}Upgrade Required{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 flex items-center justify-center py-12">
+    <div class="max-w-lg w-full px-4">
+        <!-- Upgrade Required Card -->
+        <div class="glass-card p-8 text-center">
+            <!-- Warning Icon -->
+            <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-amber-100 mb-6">
+                <svg class="h-8 w-8 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                </svg>
+            </div>
+            
+            <!-- Message -->
+            <h1 class="text-3xl font-bold text-gray-900 mb-4">{{ message }}</h1>
+            <p class="text-lg text-gray-600 mb-8">Upgrade to premium to access advanced cricket statistics and analytics.</p>
+            
+            <!-- Premium Features Preview -->
+            <div class="bg-indigo-50 rounded-lg p-6 mb-8">
+                <h3 class="text-lg font-semibold text-indigo-900 mb-4">Premium Features Include:</h3>
+                <ul class="text-left space-y-2">
+                    <li class="flex items-center text-indigo-700">
+                        <svg class="w-5 h-5 mr-3 text-indigo-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                        </svg>
+                        Advanced cricket statistics
+                    </li>
+                    <li class="flex items-center text-indigo-700">
+                        <svg class="w-5 h-5 mr-3 text-indigo-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                        </svg>
+                        Detailed player analytics
+                    </li>
+                    <li class="flex items-center text-indigo-700">
+                        <svg class="w-5 h-5 mr-3 text-indigo-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                        </svg>
+                        Premium data exports
+                    </li>
+                    <li class="flex items-center text-indigo-700">
+                        <svg class="w-5 h-5 mr-3 text-indigo-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                        </svg>
+                        Priority support
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Primary CTA -->
+            <div class="space-y-4">
+                <a href="/subscribe" class="w-full inline-flex justify-center items-center px-6 py-3 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                    </svg>
+                    {{ cta }}
+                </a>
+                
+                <!-- Secondary Actions -->
+                <div class="space-y-2">
+                    <p class="text-sm text-gray-500">Don't have an account?</p>
+                    <a href="/register" class="inline-flex items-center text-indigo-600 hover:text-indigo-500 font-medium">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
+                        </svg>
+                        Register here
+                    </a>
+                </div>
+                
+                <div class="space-y-2">
+                    <p class="text-sm text-gray-500">Already a user?</p>
+                    <a href="/login" class="inline-flex items-center text-indigo-600 hover:text-indigo-500 font-medium">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path>
+                        </svg>
+                        Log in
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Additional Info -->
+        <div class="mt-6 text-center">
+            <p class="text-sm text-gray-500">
+                Starting at just $9.99/month • Cancel anytime • 30-day money back guarantee
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

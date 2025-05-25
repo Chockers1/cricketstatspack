@@ -1,104 +1,435 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Admin Dashboard</title>
-  <style>
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-      margin: 0;
-      background-color: #f0f2f5;
-      color: #1c1e21;
-      line-height: 1.5;
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard - Cricket Stats Pack{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-50">
+    <!-- Admin Header -->
+    <div class="bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="py-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900 flex items-center">
+                            <svg class="w-6 h-6 text-red-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                            </svg>
+                            Admin Dashboard
+                        </h1>
+                        <p class="mt-1 text-sm text-gray-500">
+                            System overview and user management
+                        </p>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                            </svg>
+                            Admin Access
+                        </span>
+                        <a href="/logout" class="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                            Logout
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Stats Overview -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="floating-card bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Total Users</p>
+                        <p class="text-2xl font-bold text-gray-900">{{ stats.total_users or 0 }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="floating-card bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                            <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Active Sessions</p>
+                        <p class="text-2xl font-bold text-gray-900">{{ stats.active_sessions or 0 }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="floating-card bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                            <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Premium Users</p>
+                        <p class="text-2xl font-bold text-gray-900">{{ stats.premium_users or 0 }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="floating-card bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
+                            <svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Monthly Revenue</p>
+                        <p class="text-2xl font-bold text-gray-900">${{ stats.monthly_revenue or 0 }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Actions -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Quick Actions -->
+            <div class="lg:col-span-1">
+                <div class="floating-card bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
+                    <div class="space-y-3">
+                        <a href="/admin/export-users" class="w-full flex items-center justify-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            Export Users
+                        </a>
+                        <a href="/admin/churn" class="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                            </svg>
+                            Churn Report
+                        </a>
+                        <button onclick="refreshStats()" class="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                            Refresh Stats
+                        </button>
+                    </div>
+                </div>
+
+                <!-- System Status -->
+                <div class="floating-card bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-xl p-6">
+                    <div class="flex items-center mb-4">
+                        <div class="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
+                            <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <h3 class="ml-3 text-lg font-semibold text-green-900">System Status</h3>
+                    </div>
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-green-700">Database</span>
+                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-200 text-green-800">
+                                Online
+                            </span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-green-700">Stripe API</span>
+                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-200 text-green-800">
+                                Connected
+                            </span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-green-700">Email Service</span>
+                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-200 text-green-800">
+                                Active
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- User Management -->
+            <div class="lg:col-span-2">
+                <div class="floating-card bg-white rounded-xl shadow-sm border border-gray-200">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-lg font-semibold text-gray-900">User Management</h3>
+                            <div class="flex items-center space-x-2">
+                                <input 
+                                    type="text" 
+                                    id="userSearch" 
+                                    placeholder="Search users..." 
+                                    class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    onkeyup="filterUsers()"
+                                >
+                            </div>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full" id="userTable">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        User
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Status
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Subscription
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Actions
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                {% for user in users %}
+                                <tr class="hover:bg-gray-50 transition-colors" data-email="{{ user.email }}">
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="flex items-center">
+                                            <div class="flex-shrink-0 h-10 w-10">
+                                                <div class="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                                    <span class="text-sm font-medium text-blue-600">
+                                                        {{ user.email[0].upper() }}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div class="ml-4">
+                                                <div class="text-sm font-medium text-gray-900">
+                                                    {{ user.email }}
+                                                </div>
+                                                <div class="text-sm text-gray-500">
+                                                    Joined {{ user.created_at.strftime('%Y-%m-%d') if user.created_at else 'Unknown' }}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="flex flex-col space-y-1">
+                                            {% if user.is_banned %}
+                                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                                Banned
+                                            </span>
+                                            {% elif user.is_disabled %}
+                                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                Disabled
+                                            </span>
+                                            {% else %}
+                                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                Active
+                                            </span>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        {% if user.is_premium %}
+                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+                                            </svg>
+                                            Premium
+                                        </span>
+                                        {% else %}
+                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                            Free
+                                        </span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <div class="flex items-center space-x-2">
+                                            <!-- View Details -->
+                                            <a href="/admin/user/{{ user.email }}" class="text-blue-600 hover:text-blue-900 transition-colors">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                                </svg>
+                                            </a>
+                                            
+                                            <!-- Status Actions -->
+                                            {% if user.is_banned %}
+                                            <form method="post" action="/admin/unban" class="inline">
+                                                <input type="hidden" name="email" value="{{ user.email }}">
+                                                <button type="submit" class="text-green-600 hover:text-green-900 transition-colors" title="Unban User">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                    </svg>
+                                                </button>
+                                            </form>
+                                            {% else %}
+                                            <form method="post" action="/admin/ban" class="inline">
+                                                <input type="hidden" name="email" value="{{ user.email }}">
+                                                <button type="submit" class="text-red-600 hover:text-red-900 transition-colors" title="Ban User" onclick="return confirm('Are you sure you want to ban this user?')">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18.364 5.636M5.636 18.364l12.728-12.728"/>
+                                                    </svg>
+                                                </button>
+                                            </form>
+                                            {% endif %}
+
+                                            {% if user.is_disabled %}
+                                            <form method="post" action="/admin/enable" class="inline">
+                                                <input type="hidden" name="email" value="{{ user.email }}">
+                                                <button type="submit" class="text-blue-600 hover:text-blue-900 transition-colors" title="Enable User">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h8m-8 0a3 3 0 100-6h8a3 3 0 100 6m0 0v1a4 4 0 01-8 0v-1"/>
+                                                    </svg>
+                                                </button>
+                                            </form>
+                                            {% else %}
+                                            <form method="post" action="/admin/disable" class="inline">
+                                                <input type="hidden" name="email" value="{{ user.email }}">
+                                                <button type="submit" class="text-yellow-600 hover:text-yellow-900 transition-colors" title="Disable User" onclick="return confirm('Are you sure you want to disable this user?')">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636"/>
+                                                    </svg>
+                                                </button>
+                                            </form>
+                                            {% endif %}
+
+                                            <!-- Reset Password -->
+                                            <button onclick="openResetModal('{{ user.email }}')" class="text-purple-600 hover:text-purple-900 transition-colors" title="Reset Password">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="4" class="px-6 py-8 text-center text-gray-500">
+                                        No users found
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Reset Password Modal -->
+<div id="resetModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-2xl bg-white">
+        <div class="mt-3">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-900">Reset User Password</h3>
+                <button onclick="closeResetModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <form method="post" action="/admin/reset-password" onsubmit="return validateResetForm(this)">
+                <input type="hidden" id="resetEmail" name="email" value="">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        User Email
+                    </label>
+                    <input type="text" id="resetEmailDisplay" class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50" readonly>
+                </div>
+                <div class="mb-4">
+                    <label for="new_password" class="block text-sm font-medium text-gray-700 mb-2">
+                        New Password
+                    </label>
+                    <input type="password" id="new_password" name="new_password" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <p class="mt-1 text-xs text-gray-500">Must be at least 8 characters long</p>
+                </div>
+                <div class="flex items-center justify-end space-x-3 pt-4">
+                    <button type="button" onclick="closeResetModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                        Cancel
+                    </button>
+                    <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors">
+                        Reset Password
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% block extra_scripts %}
+<script>
+    function filterUsers() {
+        const searchInput = document.getElementById('userSearch');
+        const filter = searchInput.value.toLowerCase();
+        const table = document.getElementById('userTable');
+        const rows = table.getElementsByTagName('tr');
+
+        for (let i = 1; i < rows.length; i++) {
+            const emailCell = rows[i].getAttribute('data-email');
+            if (emailCell && emailCell.toLowerCase().indexOf(filter) > -1) {
+                rows[i].style.display = '';
+            } else if (emailCell) {
+                rows[i].style.display = 'none';
+            }
+        }
     }
-    .container {
-        max-width: 1200px;
-        margin: 2rem auto;
-        padding: 0 1rem;
+
+    function openResetModal(email) {
+        document.getElementById('resetEmail').value = email;
+        document.getElementById('resetEmailDisplay').value = email;
+        document.getElementById('resetModal').classList.remove('hidden');
     }
-    h1 {
-      font-size: 2.25rem;
-      color: #1c1e21;
-      margin-bottom: 1.5rem;
-      font-weight: 600;
+
+    function closeResetModal() {
+        document.getElementById('resetModal').classList.add('hidden');
+        document.getElementById('new_password').value = '';
     }
-    .card {
-      background: #fff;
-      padding: 1.5rem;
-      border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
-      margin-bottom: 2rem;
+
+    function validateResetForm(form) {
+        const password = form.new_password.value;
+        if (password.length < 8) {
+            showToast('Password must be at least 8 characters long', 'error');
+            return false;
+        }
+        return confirm('Are you sure you want to reset this user\'s password?');
     }
-    .card h2 {
-      font-size: 1.5rem;
-      margin-top: 0;
-      margin-bottom: 1.5rem;
-      color: #333;
-      font-weight: 500;
+
+    function refreshStats() {
+        // Add animation to refresh button
+        const button = event.target;
+        const originalContent = button.innerHTML;
+        button.innerHTML = '<svg class="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Refreshing...';
+        
+        // Simulate refresh (in real app, make AJAX call)
+        setTimeout(() => {
+            button.innerHTML = originalContent;
+            showToast('Stats refreshed successfully', 'success');
+        }, 1500);
     }
-    .stats-grid {
-      display: grid;
-      /* Adjust columns for better fit, maybe fewer columns on smaller screens */
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 1.5rem;
-    }
-    .stat-item {
-        background-color: #ffffff;
-        padding: 1.25rem;
-        border-radius: 8px;
-        text-align: center;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-        border: 1px solid #e0e0e0;
-    }
-    .stat-item .label {
-        display: block;
-        font-size: 0.9rem;
-        color: #606770;
-        margin-bottom: 0.5rem;
-    }
-    .stat-item .value {
-        display: block;
-        font-size: 1.75rem;
-        font-weight: 600;
-        color: #1c1e21;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 1rem;
-      background-color: #fff;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
-      border-radius: 8px;
-      overflow: hidden; /* Ensures border radius applies to table */
-    }
-    th, td {
-      border-bottom: 1px solid #ddd;
-      padding: 1rem;
-      text-align: left;
-      font-size: 0.9rem;
-    }
-    th {
-      background-color: #f5f6f7; /* Lighter header */
-      color: #333;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    tr:last-child td {
-        border-bottom: none; /* Remove border for last row */
-    }
-    tr:hover {
-      background-color: #f9f9f9; /* Subtle hover effect */
-    }
-    .logout {
-      text-align: right;
-      margin-bottom: 1rem;
-    }
-    .logout a {
-      text-decoration: none;
-      color: #1877f2; /* Use a less alarming color */
-      font-weight: 500;
-      padding: 0.5rem 1rem;
+
+    // Close modal when clicking outside
+    document.getElementById('resetModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeResetModal();
+        }
+    });
+</script>
+{% endblock %}
+{% endblock %}
       border-radius: 6px;
       transition: background-color 0.2s ease;
     }

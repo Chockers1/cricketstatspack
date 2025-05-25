@@ -1,50 +1,233 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Register</title>
-    <style>
-        .error {
-            color: red;
+{% extends "base.html" %}
+
+{% block title %}Sign Up - Cricket Stats Pack{% endblock %}
+
+{% block body_class %}auth-gradient{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-md w-full space-y-8">
+        <!-- Logo/Header -->
+        <div class="text-center">
+            <div class="mx-auto h-16 w-16 bg-white rounded-full flex items-center justify-center shadow-lg">
+                <svg class="h-8 w-8 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/>
+                </svg>
+            </div>
+            <h2 class="mt-6 text-3xl font-bold text-gray-900">
+                Create your account
+            </h2>
+            <p class="mt-2 text-sm text-gray-600">
+                Get started with Cricket Stats Pack today
+            </p>
+        </div>
+
+        <!-- Registration Form -->
+        <div class="glass-card rounded-2xl shadow-xl p-8">
+            {% if error %}
+            <div class="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center space-x-2">
+                <svg class="h-5 w-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span class="text-sm">{{ error }}</span>
+            </div>
+            {% endif %}
+
+            <form method="post" action="/register" class="space-y-6" onsubmit="return validateForm(this)">
+                <!-- Email -->
+                <div>
+                    <label for="email" class="block text-sm font-medium text-gray-700 mb-2">
+                        Email address
+                    </label>
+                    <input 
+                        type="email" 
+                        id="email" 
+                        name="email" 
+                        required 
+                        class="input-field appearance-none relative block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                        placeholder="Enter your email"
+                        autocomplete="email"
+                    >
+                </div>
+
+                <!-- Password -->
+                <div>
+                    <label for="password" class="block text-sm font-medium text-gray-700 mb-2">
+                        Password
+                    </label>
+                    <input 
+                        type="password" 
+                        id="password" 
+                        name="password" 
+                        required 
+                        class="input-field appearance-none relative block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                        placeholder="Create a strong password"
+                        autocomplete="new-password"
+                    >
+                    <p class="mt-1 text-xs text-gray-500">
+                        Must be at least 8 characters long
+                    </p>
+                </div>
+
+                <!-- Security Questions Section -->
+                <div class="bg-gray-50 rounded-lg p-4 space-y-4">
+                    <h3 class="text-sm font-medium text-gray-900 flex items-center">
+                        <svg class="h-4 w-4 text-gray-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                        </svg>
+                        Security Questions
+                    </h3>
+                    <p class="text-xs text-gray-600">
+                        These help us verify your identity if you forget your password
+                    </p>
+
+                    <!-- Security Question 1 -->
+                    <div>
+                        <label for="security_question_1" class="block text-sm font-medium text-gray-700 mb-2">
+                            Security Question 1
+                        </label>
+                        <select 
+                            id="security_question_1" 
+                            name="security_question_1" 
+                            required
+                            class="appearance-none relative block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                        >
+                            <option value="">--Select a question--</option>
+                            <option value="What is the name of your first pet?">What is the name of your first pet?</option>
+                            <option value="What street did you grow up on?">What street did you grow up on?</option>
+                            <option value="What is your mother's maiden name?">What is your mother's maiden name?</option>
+                            <option value="What was the name of your first school?">What was the name of your first school?</option>
+                            <option value="What is the name of your favorite book?">What is the name of your favorite book?</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="security_answer_1" class="block text-sm font-medium text-gray-700 mb-2">
+                            Answer
+                        </label>
+                        <input 
+                            type="text" 
+                            id="security_answer_1" 
+                            name="security_answer_1" 
+                            required
+                            class="input-field appearance-none relative block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                            placeholder="Enter your answer"
+                        >
+                    </div>
+
+                    <!-- Security Question 2 -->
+                    <div>
+                        <label for="security_question_2" class="block text-sm font-medium text-gray-700 mb-2">
+                            Security Question 2
+                        </label>
+                        <select 
+                            id="security_question_2" 
+                            name="security_question_2" 
+                            required
+                            class="appearance-none relative block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                        >
+                            <option value="">--Select a question--</option>
+                            <option value="What is the name of your first pet?">What is the name of your first pet?</option>
+                            <option value="What street did you grow up on?">What street did you grow up on?</option>
+                            <option value="What is your mother's maiden name?">What is your mother's maiden name?</option>
+                            <option value="What was the name of your first school?">What was the name of your first school?</option>
+                            <option value="What is the name of your favorite book?">What is the name of your favorite book?</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="security_answer_2" class="block text-sm font-medium text-gray-700 mb-2">
+                            Answer
+                        </label>
+                        <input 
+                            type="text" 
+                            id="security_answer_2" 
+                            name="security_answer_2" 
+                            required
+                            class="input-field appearance-none relative block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                            placeholder="Enter your answer"
+                        >
+                    </div>
+                </div>
+
+                <!-- Submit Button -->
+                <div>
+                    <button 
+                        type="submit" 
+                        class="btn-primary group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                    >
+                        <span class="absolute left-0 inset-y-0 flex items-center pl-3">
+                            <svg class="h-5 w-5 text-white group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/>
+                            </svg>
+                        </span>
+                        Create account
+                    </button>
+                </div>
+
+                <div class="text-center">
+                    <span class="text-sm text-gray-600">
+                        Already have an account?
+                        <a href="/login" class="font-medium text-primary-600 hover:text-primary-500 transition-colors">
+                            Sign in
+                        </a>
+                    </span>
+                </div>
+            </form>
+        </div>
+
+        <!-- Additional Links -->
+        <div class="text-center">
+            <p class="text-xs text-gray-500">
+                By creating an account, you agree to our 
+                <a href="#" class="text-primary-600 hover:text-primary-500">Terms of Service</a> 
+                and 
+                <a href="#" class="text-primary-600 hover:text-primary-500">Privacy Policy</a>
+            </p>
+        </div>
+    </div>
+</div>
+
+{% block extra_scripts %}
+<script>
+    // Ensure different security questions are selected
+    document.getElementById('security_question_1').addEventListener('change', function() {
+        const question2 = document.getElementById('security_question_2');
+        const selectedValue = this.value;
+        
+        // Enable all options in question 2
+        Array.from(question2.options).forEach(option => {
+            option.disabled = false;
+        });
+        
+        // Disable the selected option in question 2
+        if (selectedValue) {
+            Array.from(question2.options).forEach(option => {
+                if (option.value === selectedValue) {
+                    option.disabled = true;
+                }
+            });
         }
-    </style>
-</head>
-<body>
-    <h2>Register</h2>
-
-    {% if error %}
-        <p class="error">{{ error }}</p>
-    {% endif %}
-
-    <form method="post" action="/register">
-        <label for="email">Email:</label>
-        <input type="email" id="email" name="email" required><br>
-
-        <label for="password">Password:</label>
-        <input type="password" id="password" name="password" required><br>
-
-        <label for="security_question_1">Security Question 1:</label><br>
-        <select id="security_question_1" name="security_question_1" required>
-            <option value="">--Select a question--</option>
-            <option value="What is the name of your first pet?">What is the name of your first pet?</option>
-            <option value="What street did you grow up on?">What street did you grow up on?</option>
-            {# Add more predefined questions as needed #}
-        </select><br>
-
-        <label for="security_answer_1">Answer to Question 1:</label><br>
-        <input type="text" id="security_answer_1" name="security_answer_1" required><br><br>
-
-        <label for="security_question_2">Security Question 2:</label><br>
-        <select id="security_question_2" name="security_question_2" required>
-            <option value="">--Select a question--</option>
-            <option value="What is the name of your first pet?">What is the name of your first pet?</option>
-            <option value="What street did you grow up on?">What street did you grow up on?</option>
-             {# Add more predefined questions as needed #}
-       </select><br>
-
-        <label for="security_answer_2">Answer to Question 2:</label><br>
-        <input type="text" id="security_answer_2" name="security_answer_2" required><br><br>
-
-        <button type="submit">Register</button>
-    </form>
-</body>
-</html>
+    });
+    
+    document.getElementById('security_question_2').addEventListener('change', function() {
+        const question1 = document.getElementById('security_question_1');
+        const selectedValue = this.value;
+        
+        // Enable all options in question 1
+        Array.from(question1.options).forEach(option => {
+            option.disabled = false;
+        });
+        
+        // Disable the selected option in question 1
+        if (selectedValue) {
+            Array.from(question1.options).forEach(option => {
+                if (option.value === selectedValue) {
+                    option.disabled = true;
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}
+{% endblock %}

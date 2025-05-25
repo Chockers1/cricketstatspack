@@ -1,23 +1,125 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Login - Cricket Stats Pack</title>
-</head>
-<body>
-    <h2>Login</h2>
+{% extends "base.html" %}
 
-    {% if error %}
-        <p style="color: red;">{{ error }}</p>
-    {% endif %}
+{% block title %}Login - Cricket Stats Pack{% endblock %}
 
-    <form method="post" action="/login">
-        <label>Email:</label><br> {# Changed label from Username #}
-        <input type="email" name="email" required><br> {# Changed name from username, type to email #}
-        <label>Password:</label><br>
-        <input type="password" name="password" required><br><br>
-        <input type="submit" value="Login">
-        <p><a href="/verify-security">Forgot your password?</a></p>
-    </form>
+{% block body_class %}auth-gradient{% endblock %}
 
-</body>
-</html>
+{% block content %}
+<div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-md w-full space-y-8">
+        <!-- Logo/Header -->
+        <div class="text-center">
+            <div class="mx-auto h-16 w-16 bg-white rounded-full flex items-center justify-center shadow-lg">
+                <svg class="h-8 w-8 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+            </div>
+            <h2 class="mt-6 text-3xl font-bold text-gray-900">
+                Welcome back
+            </h2>
+            <p class="mt-2 text-sm text-gray-600">
+                Sign in to your Cricket Stats Pack account
+            </p>
+        </div>
+
+        <!-- Login Form -->
+        <div class="glass-card rounded-2xl shadow-xl p-8">
+            {% if error %}
+            <div class="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center space-x-2">
+                <svg class="h-5 w-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span class="text-sm">{{ error }}</span>
+            </div>
+            {% endif %}
+
+            <form method="post" action="/login" class="space-y-6" onsubmit="return validateForm(this)">
+                <div>
+                    <label for="email" class="block text-sm font-medium text-gray-700 mb-2">
+                        Email address
+                    </label>
+                    <div class="relative">
+                        <input 
+                            type="email" 
+                            id="email" 
+                            name="email" 
+                            required 
+                            class="input-field appearance-none relative block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
+                            placeholder="Enter your email"
+                            autocomplete="email"
+                        >
+                        <div class="absolute inset-y-0 right-0 pr-3 flex items-center">
+                            <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207"/>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="password" class="block text-sm font-medium text-gray-700 mb-2">
+                        Password
+                    </label>
+                    <div class="relative">
+                        <input 
+                            type="password" 
+                            id="password" 
+                            name="password" 
+                            required 
+                            class="input-field appearance-none relative block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
+                            placeholder="Enter your password"
+                            autocomplete="current-password"
+                        >
+                        <div class="absolute inset-y-0 right-0 pr-3 flex items-center">
+                            <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between">
+                    <div class="text-sm">
+                        <a href="/verify-security" class="font-medium text-primary-600 hover:text-primary-500 transition-colors">
+                            Forgot your password?
+                        </a>
+                    </div>
+                </div>
+
+                <div>
+                    <button 
+                        type="submit" 
+                        class="btn-primary group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                    >
+                        <span class="absolute left-0 inset-y-0 flex items-center pl-3">
+                            <svg class="h-5 w-5 text-white group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/>
+                            </svg>
+                        </span>
+                        Sign in
+                    </button>
+                </div>
+
+                <div class="text-center">
+                    <span class="text-sm text-gray-600">
+                        Don't have an account?
+                        <a href="/register" class="font-medium text-primary-600 hover:text-primary-500 transition-colors">
+                            Sign up
+                        </a>
+                    </span>
+                </div>
+            </form>
+        </div>
+
+        <!-- Additional Links -->
+        <div class="text-center">
+            <p class="text-xs text-gray-500">
+                By signing in, you agree to our 
+                <a href="#" class="text-primary-600 hover:text-primary-500">Terms of Service</a> 
+                and 
+                <a href="#" class="text-primary-600 hover:text-primary-500">Privacy Policy</a>
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
