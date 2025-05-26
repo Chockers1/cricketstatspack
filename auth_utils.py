@@ -248,11 +248,9 @@ def get_admin_stats():
         cursor.execute("SELECT COUNT(*) as count FROM users WHERE subscription_type = 'annual'")
         result = cursor.fetchone()
         if result: 
-            stats["annual_subs"] = result["count"]
-
-        # Calculate monthly revenue using correct NZD pricing
-        # Monthly: $5.00 NZD per month, Annual: $50.00 NZD per year (convert to monthly equivalent)
-        monthly_revenue = (stats["monthly_subs"] * 5.00) + (stats["annual_subs"] * (50.00 / 12))
+            stats["annual_subs"] = result["count"]        # Calculate monthly revenue using correct GBP pricing
+        # Monthly: £5.00 GBP per month, Annual: £49.99 GBP per year (convert to monthly equivalent)
+        monthly_revenue = (stats["monthly_subs"] * 5.00) + (stats["annual_subs"] * (49.99 / 12))
         stats["monthly_revenue"] = round(monthly_revenue, 2)# For active_sessions, let's count unique users from session_logs in last 30 days
         try:
             cursor.execute("""
