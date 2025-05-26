@@ -227,27 +227,33 @@ def get_admin_stats():
         cursor = conn.cursor(dictionary=True) # Keep dictionary=True for user list        # --- Existing User Stats ---
         cursor.execute("SELECT COUNT(*) as count FROM users")
         result = cursor.fetchone()
-        if result: stats["total_users"] = result["count"]
+        if result: 
+            stats["total_users"] = result["count"]
 
         cursor.execute("SELECT COUNT(*) as count FROM users WHERE is_premium = 1")
         result = cursor.fetchone()
-        if result: stats["premium_users"] = result["count"]
+        if result: 
+            stats["premium_users"] = result["count"]
 
         cursor.execute("SELECT COUNT(*) as count FROM users WHERE stripe_customer_id IS NULL OR stripe_customer_id = ''")
         result = cursor.fetchone()
-        if result: stats["missing_stripe_id"] = result["count"]
+        if result: 
+            stats["missing_stripe_id"] = result["count"]
 
         cursor.execute("SELECT COUNT(*) as count FROM users WHERE subscription_type = 'monthly'")
         result = cursor.fetchone()
-        if result: stats["monthly_subs"] = result["count"]
-        
+        if result: 
+            stats["monthly_subs"] = result["count"]
+
         cursor.execute("SELECT COUNT(*) as count FROM users WHERE subscription_type = 'annual'")
         result = cursor.fetchone()
-        if result: stats["annual_subs"] = result["count"]
+        if result: 
+            stats["annual_subs"] = result["count"]
 
-        # Calculate monthly revenue (monthly * $9.99 + annual * $99.99)
-        monthly_revenue = (stats["monthly_subs"] * 9.99) + (stats["annual_subs"] * 99.99)
-        stats["monthly_revenue"] = round(monthly_revenue, 2)        # For active_sessions, let's count unique users from session_logs in last 30 days
+        # Calculate monthly revenue using correct NZD pricing
+        # Monthly: $5.00 NZD per month, Annual: $50.00 NZD per year (convert to monthly equivalent)
+        monthly_revenue = (stats["monthly_subs"] * 5.00) + (stats["annual_subs"] * (50.00 / 12))
+        stats["monthly_revenue"] = round(monthly_revenue, 2)# For active_sessions, let's count unique users from session_logs in last 30 days
         try:
             cursor.execute("""
                 SELECT COUNT(DISTINCT email) as count 
