@@ -203,6 +203,8 @@ def get_admin_stats():
     stats = {
         "total_users": 0,
         "premium_users": 0,
+        "active_sessions": 0,
+        "monthly_revenue": 0,
         "missing_stripe_id": 0,
         "monthly_subs": 0,
         "annual_subs": 0,
@@ -222,9 +224,7 @@ def get_admin_stats():
             password=os.getenv("DB_PASS"),
             database=os.getenv("DB_NAME")
         )
-        cursor = conn.cursor(dictionary=True) # Keep dictionary=True for user list
-
-        # --- Existing User Stats ---
+        cursor = conn.cursor(dictionary=True) # Keep dictionary=True for user list        # --- Existing User Stats ---
         cursor.execute("SELECT COUNT(*) as count FROM users")
         result = cursor.fetchone()
         if result: stats["total_users"] = result["count"]
@@ -240,10 +240,29 @@ def get_admin_stats():
         cursor.execute("SELECT COUNT(*) as count FROM users WHERE subscription_type = 'monthly'")
         result = cursor.fetchone()
         if result: stats["monthly_subs"] = result["count"]
-
+        
         cursor.execute("SELECT COUNT(*) as count FROM users WHERE subscription_type = 'annual'")
         result = cursor.fetchone()
         if result: stats["annual_subs"] = result["count"]
+
+        # Calculate monthly revenue (monthly * $9.99 + annual * $99.99)
+        monthly_revenue = (stats["monthly_subs"] * 9.99) + (stats["annual_subs"] * 99.99)
+        stats["monthly_revenue"] = round(monthly_revenue, 2)        # For active_sessions, let's count unique users from session_logs in last 30 days
+        try:
+            cursor.execute("""
+                SELECT COUNT(DISTINCT email) as count 
+                FROM session_logs 
+                WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                AND email IS NOT NULL
+            """)
+            result = cursor.fetchone()
+            if result: 
+                stats["active_sessions"] = result["count"]
+            else:
+                stats["active_sessions"] = 0
+        except mysql.connector.Error:
+            # session_logs table might not exist
+            stats["active_sessions"] = 0
 
         # --- New Session Stats ---
         # Use a standard cursor (or fetch specific columns) for session stats if dictionary=True causes issues
@@ -251,27 +270,33 @@ def get_admin_stats():
         if cursor: cursor.close()
         cursor = conn.cursor() # Standard cursor for session stats
 
-        cursor.execute("SELECT COUNT(*) FROM session_logs")
-        result = cursor.fetchone()
-        stats["total_sessions"] = result[0] if result else 0
+        try:
+            cursor.execute("SELECT COUNT(*) FROM session_logs")
+            result = cursor.fetchone()
+            stats["total_sessions"] = result[0] if result else 0
 
-        cursor.execute("SELECT AVG(duration_seconds) FROM session_logs")
-        result = cursor.fetchone()
-        # Handle potential None if table is empty, round the average
-        stats["avg_duration"] = round(result[0] or 0)
+            cursor.execute("SELECT AVG(duration_seconds) FROM session_logs")
+            result = cursor.fetchone()
+            # Handle potential None if table is empty, round the average
+            stats["avg_duration"] = round(result[0] or 0)
 
-        # Fetch most active users (returns list of tuples: (email, count))
-        cursor.execute("""
-            SELECT email, COUNT(*) AS count
-            FROM session_logs
-            WHERE email IS NOT NULL  /* Exclude null emails if necessary */
-            GROUP BY email
-            ORDER BY count DESC
-            LIMIT 5
-        """)
-        # Convert list of tuples to list of dicts for easier template access
-        most_active_raw = cursor.fetchall()
-        stats["most_active_users"] = [{"email": email, "count": count} for email, count in most_active_raw]
+            # Fetch most active users (returns list of tuples: (email, count))
+            cursor.execute("""
+                SELECT email, COUNT(*) AS count
+                FROM session_logs
+                WHERE email IS NOT NULL  /* Exclude null emails if necessary */
+                GROUP BY email
+                ORDER BY count DESC
+                LIMIT 5
+            """)
+            # Convert list of tuples to list of dicts for easier template access
+            most_active_raw = cursor.fetchall()
+            stats["most_active_users"] = [{"email": email, "count": count} for email, count in most_active_raw]
+        except mysql.connector.Error:
+            # session_logs table might not exist
+            stats["total_sessions"] = 0
+            stats["avg_duration"] = 0
+            stats["most_active_users"] = []
 
         # Re-create dictionary cursor for fetching user details
         if cursor: cursor.close()

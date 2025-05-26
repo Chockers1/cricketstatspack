@@ -941,17 +941,30 @@ async def admin_dashboard(request: Request):
     user_email = request.session.get("user_id")
     logger.info(f"Admin dashboard access attempt by: {user_email or 'Not logged in'}")
     
-    # verify_admin function should also have logging
-    # For now, assuming verify_admin is called and might raise HTTPException
     try:
         verify_admin(request) # This will raise HTTPException if not admin
         logger.info(f"Admin access GRANTED to: {user_email}")
         
-        # stats, users = get_admin_stats() # get_admin_stats should have its own logging
-        # logger.debug(f"Admin stats fetched. Number of users: {len(users) if users else 0}")
+        # Try to get admin stats, with fallback for local development
+        try:
+            stats, users = get_admin_stats()
+            logger.debug(f"Admin stats fetched from database. Number of users: {len(users) if users else 0}")
+        except Exception as db_error:
+            logger.warning(f"Database error in admin dashboard: {db_error}")
+            logger.info("Attempting local development fallback...")
+            
+            # Import local development override
+            try:
+                from local_dev_override import get_local_admin_stats
+                stats, users = get_local_admin_stats()
+                logger.info(f"Using local development data. Users: {len(users) if users else 0}")
+            except Exception as fallback_error:
+                logger.error(f"Local development fallback failed: {fallback_error}")
+                # Provide minimal fallback data
+                stats = {'total_users': 0, 'premium_users': 0, 'free_users': 0, 'recent_signups': 0, 'active_sessions': 0, 'monthly_revenue': 0}
+                users = []
+                logger.warning("Using empty fallback data for admin dashboard")
         
-        # Simulate fetching data for logging example
-        stats, users = ({"total_users": 0, "active_sessions": 0}, [])
         logger.debug(f"Admin stats: {stats}, Users count: {len(users)}")
 
         return templates.TemplateResponse("admin_dashboard.html", {
