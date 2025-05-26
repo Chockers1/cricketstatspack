@@ -199,19 +199,40 @@ def create_user(email: str, password: str, q1: str, a1: str, q2: str, a2: str) -
 # --- Admin Functions ---
 
 def get_admin_stats():
-    """Fetches statistics and user details for the admin dashboard."""
+    """Fetches comprehensive statistics and user details for the admin dashboard."""
     stats = {
+        # Basic user metrics
         "total_users": 0,
         "premium_users": 0,
+        "free_users": 0,
         "active_sessions": 0,
+        
+        # Revenue metrics
         "monthly_revenue": 0,
-        "missing_stripe_id": 0,
+        "annual_revenue": 0,
+        "all_time_revenue": 0,
+        "avg_revenue_per_user": 0,
+        
+        # Subscription metrics
         "monthly_subs": 0,
         "annual_subs": 0,
-        # Add keys for new session stats
+        "missing_stripe_id": 0,
+        "conversion_rate": 0,
+        
+        # Growth metrics
+        "new_users_this_month": 0,
+        "new_premium_this_month": 0,
+        "all_time_premium_users": 0,
+        
+        # Session stats
         "total_sessions": 0,
         "avg_duration": 0,
         "most_active_users": [],
+        
+        # Account status
+        "banned_users": 0,
+        "disabled_users": 0,
+        "active_users": 0,
     }
     users = []
     conn = None
@@ -224,7 +245,9 @@ def get_admin_stats():
             password=os.getenv("DB_PASS"),
             database=os.getenv("DB_NAME")
         )
-        cursor = conn.cursor(dictionary=True) # Keep dictionary=True for user list        # --- Existing User Stats ---
+        cursor = conn.cursor(dictionary=True) # Keep dictionary=True for user list
+        
+        # --- Basic User Stats ---
         cursor.execute("SELECT COUNT(*) as count FROM users")
         result = cursor.fetchone()
         if result: 
@@ -234,12 +257,35 @@ def get_admin_stats():
         result = cursor.fetchone()
         if result: 
             stats["premium_users"] = result["count"]
+            
+        cursor.execute("SELECT COUNT(*) as count FROM users WHERE is_premium = 0")
+        result = cursor.fetchone()
+        if result: 
+            stats["free_users"] = result["count"]
 
+        # --- Account Status Stats ---
+        cursor.execute("SELECT COUNT(*) as count FROM users WHERE is_banned = 1")
+        result = cursor.fetchone()
+        if result: 
+            stats["banned_users"] = result["count"]
+            
+        cursor.execute("SELECT COUNT(*) as count FROM users WHERE is_disabled = 1")
+        result = cursor.fetchone()
+        if result: 
+            stats["disabled_users"] = result["count"]
+            
+        cursor.execute("SELECT COUNT(*) as count FROM users WHERE is_banned = 0 AND is_disabled = 0")
+        result = cursor.fetchone()
+        if result: 
+            stats["active_users"] = result["count"]
+
+        # --- Stripe Integration Stats ---
         cursor.execute("SELECT COUNT(*) as count FROM users WHERE stripe_customer_id IS NULL OR stripe_customer_id = ''")
         result = cursor.fetchone()
         if result: 
             stats["missing_stripe_id"] = result["count"]
 
+        # --- Subscription Type Stats ---
         cursor.execute("SELECT COUNT(*) as count FROM users WHERE subscription_type = 'monthly'")
         result = cursor.fetchone()
         if result: 
@@ -248,10 +294,56 @@ def get_admin_stats():
         cursor.execute("SELECT COUNT(*) as count FROM users WHERE subscription_type = 'annual'")
         result = cursor.fetchone()
         if result: 
-            stats["annual_subs"] = result["count"]        # Calculate monthly revenue using correct GBP pricing
-        # Monthly: £5.00 GBP per month, Annual: £49.99 GBP per year (convert to monthly equivalent)
+            stats["annual_subs"] = result["count"]
+            
+        # --- Growth Metrics ---
+        # New users this month
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM users 
+            WHERE created_at >= DATE_SUB(NOW(), INTERVAL 1 MONTH)
+        """)
+        result = cursor.fetchone()
+        if result: 
+            stats["new_users_this_month"] = result["count"]
+            
+        # New premium users this month
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM users 
+            WHERE is_premium = 1 AND created_at >= DATE_SUB(NOW(), INTERVAL 1 MONTH)
+        """)
+        result = cursor.fetchone()
+        if result: 
+            stats["new_premium_this_month"] = result["count"]
+            
+        # All-time premium users (including those who may have cancelled)
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM users 
+            WHERE stripe_customer_id IS NOT NULL AND stripe_customer_id != ''
+        """)
+        result = cursor.fetchone()
+        if result: 
+            stats["all_time_premium_users"] = result["count"]
+
+        # --- Revenue Calculations ---
+        # Monthly revenue using correct GBP pricing
         monthly_revenue = (stats["monthly_subs"] * 5.00) + (stats["annual_subs"] * (49.99 / 12))
-        stats["monthly_revenue"] = round(monthly_revenue, 2)# For active_sessions, let's count unique users from session_logs in last 30 days
+        stats["monthly_revenue"] = round(monthly_revenue, 2)
+        
+        # Annual revenue (current active subscriptions)
+        annual_revenue = (stats["monthly_subs"] * 5.00 * 12) + (stats["annual_subs"] * 49.99)
+        stats["annual_revenue"] = round(annual_revenue, 2)
+        
+        # All-time revenue estimate (based on all users who ever had Stripe customer IDs)
+        all_time_revenue = stats["all_time_premium_users"] * 49.99  # Conservative estimate using annual price
+        stats["all_time_revenue"] = round(all_time_revenue, 2)
+        
+        # Average revenue per user (ARPU)
+        if stats["total_users"] > 0:
+            stats["avg_revenue_per_user"] = round(stats["all_time_revenue"] / stats["total_users"], 2)
+        
+        # Conversion rate (percentage of users who became premium)
+        if stats["total_users"] > 0:
+            stats["conversion_rate"] = round((stats["all_time_premium_users"] / stats["total_users"]) * 100, 1)# For active_sessions, let's count unique users from session_logs in last 30 days
         try:
             cursor.execute("""
                 SELECT COUNT(DISTINCT email) as count 

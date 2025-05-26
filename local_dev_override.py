@@ -14,12 +14,31 @@ def get_mock_admin_data():
     Return mock admin data for local development when database is unavailable
     """
     mock_stats = {
+        # Basic user metrics
         'total_users': 25,
         'premium_users': 8,
         'free_users': 17,
-        'recent_signups': 5,
+        'active_users': 23,
+        
+        # Revenue metrics
+        'monthly_revenue': 33.32,  # 8 premium users × £4.17 (monthly from annual)
+        'annual_revenue': 199.92,  # 4 annual subs × £49.99
+        'all_time_revenue': 399.92,  # Total lifetime revenue
+        'arpu': 15.996,  # Average Revenue Per User (all_time_revenue / total_users)
+        
+        # Growth metrics
+        'new_users_this_month': 5,
+        'new_premium_this_month': 2,
+        'conversion_rate': 32.0,  # (premium_users / total_users) × 100
+        'lifetime_premium_users': 12,  # Total premium users ever (including churned)
+        
+        # Account status metrics
+        'banned_users': 1,
+        'disabled_users': 1,
         'active_sessions': 12,
-        'monthly_revenue': 79.92
+        
+        # Legacy compatibility
+        'recent_signups': 5
     }
     
     mock_users = [
